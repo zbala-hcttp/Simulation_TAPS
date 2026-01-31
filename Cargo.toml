@@ -1,6 +1,7 @@
 [package]
-name = "Simulation_TAPS"
+name = "simulation_taps"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+taps = { path = "../TAPS" }
