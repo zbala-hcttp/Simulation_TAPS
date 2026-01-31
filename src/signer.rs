@@ -1,10 +1,11 @@
-use taps::{KeyPair, SecretKey, PublicKey, Scalar};
-use taps::protocol::{sign, create_commitment}; // Assuming these are exposed
+use taps::protocol::taps::{KeyPair};
+use secp256k1::{PublicKey, SecretKey, Scalar};
+use taps::protocol::taps::{sign, create_commitment}; // Assuming these are exposed
 
 pub struct Signer {
     pub id: usize,
     // Secrets
-    sk: SecretKey,          // Identity Secret
+    key_pr: KeyPair,          // Identity Secret
     // State for Current Session
     current_nonce: Option<KeyPair>, // (r, R)
 }
@@ -13,14 +14,14 @@ impl Signer {
     pub fn new(id: usize, keys: &KeyPair) -> Self {
         Signer {
             id,
-            sk: keys.sk,
+            key_pr: keys.clone(),
             current_nonce: None,
         }
     }
 
     // Step 1: Generate Commitment (R)
     pub fn commit(&mut self) -> PublicKey {
-        let nonce = taps::create_commitment(); // Function from TAPS lib
+        let nonce =taps::protocol::taps::create_commitment(); // Function from TAPS lib
         let R = nonce.pk;
         self.current_nonce = Some(nonce);
         R
