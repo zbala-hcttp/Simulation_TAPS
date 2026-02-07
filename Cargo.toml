@@ -8,3 +8,4 @@ taps = { path = "../TAPS" }
 secp256k1 = { version = "0.28.0", features = ["rand", "global-context", "serde"] }
 aes-gcm = "0.10"
 rand = "0.8"
+sha2 = "0.10"

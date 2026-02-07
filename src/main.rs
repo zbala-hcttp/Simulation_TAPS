@@ -1,3 +1,4 @@
+pub mod crypto;
 pub mod authority;
 //pub mod signer;
 

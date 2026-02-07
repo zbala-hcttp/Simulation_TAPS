@@ -1,6 +1,6 @@
 use secp256k1::{Secp256k1, SecretKey, PublicKey, Message, ecdh::SharedSecret};
 use secp256k1::ecdsa::Signature;
-use secp256k1::hashes::{sha256, Hash};
+use sha2::{Sha256, Digest};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce
@@ -30,9 +30,9 @@ fn derive_aes_key(my_sk: &SecretKey, their_pk: &PublicKey) -> Key<Aes256Gcm> {
     // 2. Hash it to get a uniform 32-byte key
     // SharedSecret implements AsRef<[u8]>, which gives the X-coordinate hash usually.
     // To be perfectly explicit/safe, we hash the bytes provided by the library.
-    let hash = sha256::Hash::hash(shared_point.as_ref());
-    
-    *Key::<Aes256Gcm>::from_slice(hash.as_byte_array())
+    let mut hasher = Sha256::new();
+    hasher.update(shared_point.as_ref());
+    *Key::<Aes256Gcm>::from_slice(hasher.finalize().as_slice())
 }
 
 /// Encrypts data using AES-256-GCM + ECDH.
@@ -87,8 +87,9 @@ pub fn sign_package(
     buffer.extend_from_slice(nonce); // Must sign nonce too!
     buffer.extend_from_slice(&timestamp.to_be_bytes());
     
-    let hash = sha256::Hash::hash(&buffer);
-    let msg = Message::from_digest(hash.to_byte_array());
+    let mut hasher = Sha256::new();
+    hasher.update(&buffer);
+    let msg = Message::from_digest(hasher.finalize().into());
     
     secp.sign_ecdsa(&msg, signer_sk)
 }
@@ -114,8 +115,9 @@ pub fn verify_package(
     buffer.extend_from_slice(&package.nonce);
     buffer.extend_from_slice(&package.timestamp.to_be_bytes());
 
-    let hash = sha256::Hash::hash(&buffer);
-    let msg = Message::from_digest(hash.to_byte_array());
+    let mut hasher = Sha256::new();
+    hasher.update(&buffer);
+    let msg = Message::from_digest(hasher.finalize().into());
 
     secp.verify_ecdsa(&msg, &package.signature, sender_pk).is_ok()
 }
