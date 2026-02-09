@@ -4,30 +4,27 @@ use crate::crypto::*;
 use secp256k1::{PublicKey, SecretKey};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use serde::{Serialize, Deserialize};
 
 pub struct KeyPairs {
-    pub(crate) signers_keys: Vec<KeyPair>,      // (sk_i, pk_i)
-    pub(crate) combiner_keys: KeyPair,        // (sk_c, pk_c)
-    pub(crate) tracer_keys: KeyPair,            // (sk_e, pk_e)
-    pub(crate) tracing_keys: Vec<KeyPair>,      // (tau_i, h_i)
+    pub signers_keys: Vec<KeyPair>,      // (sk_i, pk_i)
+    pub combiner_keys: KeyPair,        // (sk_c, pk_c)
+    pub tracer_keys: KeyPair,            // (sk_e, pk_e)
+    pub tracing_keys: Vec<KeyPair>,      // (tau_i, h_i)
 }
 
 impl KeyPairs {
-    /// Initializes the system, generating all static keys for N actors.
     pub fn new(n: usize) -> Self {
         let mut signers = Vec::with_capacity(n);
         let mut tracing = Vec::with_capacity(n);
 
-        // 1. Generate N Signer Identity Keys and Tracing Keys (tau_i)
         for _ in 0..n {
             signers.push(KeyPair::create());
             tracing.push(KeyPair::create());
         }
 
-        // 2. Generate N Tracing Keys (h_i = g^tau_i)
         let combiner_kp = KeyPair::create();
 
-        // 3. Generate Tracer's Encryption Keypair
         let tracer_kp = KeyPair::create();
 
         KeyPairs {
@@ -41,12 +38,71 @@ impl KeyPairs {
     pub fn set_pk(&self) -> PK {
         PK::set(&self.signers_keys, &self.combiner_keys, &self.tracer_keys)
     }
+
+    pub fn set_quorum(&self, t: usize) -> Quorum {
+        Quorum::choose(
+            self.signers_keys.len(),
+            t,
+            &self.signers_keys
+        )
+    }
+
+    pub fn set_tracing_keys(&self) -> TracingKeys {
+        TracingKeys::set(&self.tracing_keys)
+    }
     
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignerPackage {
+    pub my_kp: KeyPair,
+}
 
+impl SignerPackage {
+    pub fn new(auth_keys: &KeyPairs, index: usize) -> Self {
+        let my_kp = auth_keys.signers_keys[index].clone();
 
+        SignerPackage {
+            my_kp,
+        }
+    }
+}
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CombinerPackage {
+    pub kp_cs: KeyPair,
+    pub pk: PK,
+    pub quo: Quorum,
+    pub tks: TracingKeys,
+}
+
+impl CombinerPackage {
+    pub fn new(auth_keys: &KeyPairs, quo: Quorum) -> Self {
+        CombinerPackage {
+            kp_cs: auth_keys.combiner_keys.clone(),
+            pk: auth_keys.set_pk(),
+            quo,
+            tks: TracingKeys::set(&auth_keys.tracing_keys),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TracerPackage {
+    pub kp_t: KeyPair,
+    pub pk: PK,
+    pub tracing_keys: Vec<KeyPair>,
+}
+
+impl TracerPackage {
+    pub fn new(auth_keys: &KeyPairs) -> Self {
+        TracerPackage {
+            kp_t: auth_keys.tracer_keys.clone(),
+            pk: auth_keys.set_pk(),
+            tracing_keys: auth_keys.tracing_keys.clone(),
+        }
+    }
+}
 
 
 
