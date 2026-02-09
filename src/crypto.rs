@@ -121,3 +121,127 @@ pub fn verify_package(
 
     secp.verify_ecdsa(&msg, &package.signature, sender_pk).is_ok()
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secp256k1::{Secp256k1, SecretKey, PublicKey};
+    use rand::rngs::OsRng;
+
+    #[test]
+    fn test_secure_package_lifecycle() {
+        let secp = Secp256k1::new();
+
+        // 1. Setup Identities (Alice and Bob)
+        let (alice_sk, alice_pk) = secp.generate_keypair(&mut OsRng);
+        let (bob_sk, bob_pk) = secp.generate_keypair(&mut OsRng);
+
+        // 2. Prepare Data
+        let message = b"Attack at dawn! But securely.";
+        let timestamp = current_timestamp();
+
+        // --- ALICE SENDS TO BOB ---
+
+        // 3. Encrypt (Alice uses her SK and Bob's PK)
+        // Note: encrypt_package returns (ciphertext, nonce)
+        let (ciphertext, nonce) = encrypt_package(&alice_sk, &bob_pk, message);
+
+        // 4. Sign (Alice signs the encrypted package)
+        let signature = sign_package(&alice_sk, &ciphertext, &nonce, timestamp);
+
+        // 5. Pack it up
+        let package = SecurePackage {
+            ciphertext: ciphertext.clone(),
+            nonce: nonce.clone(),
+            timestamp,
+            signature,
+        };
+
+        // --- BOB RECEIVES ---
+
+        // 6. Verify Origin & Freshness
+        // Bob checks if this really came from Alice and isn't too old (e.g., 60s window)
+        let is_valid = verify_package(&alice_pk, &package, 60);
+        assert!(is_valid, "Package signature or timestamp verification failed");
+
+        // 7. Decrypt (Bob uses his SK and Alice's PK)
+        let decrypted_bytes = decrypt_package(&bob_sk, &alice_pk, &package.ciphertext, &package.nonce);
+
+        // 8. Assert Success
+        assert_eq!(message.to_vec(), decrypted_bytes, "Decrypted message does not match original!");
+        println!("Crypto Lifecycle Test: SUCCESS");
+    }
+
+    #[test]
+    fn test_replay_attack_prevention() {
+        let secp = Secp256k1::new();
+        let (alice_sk, alice_pk) = secp.generate_keypair(&mut OsRng);
+        let (bob_sk, bob_pk) = secp.generate_keypair(&mut OsRng);
+
+        let message = b"Old message";
+
+        // Create an OLD timestamp (2 minutes ago)
+        let old_timestamp = current_timestamp() - 120;
+
+        let (ciphertext, nonce) = encrypt_package(&alice_sk, &bob_pk, message);
+        let signature = sign_package(&alice_sk, &ciphertext, &nonce, old_timestamp);
+
+        let expired_package = SecurePackage {
+            ciphertext,
+            nonce,
+            timestamp: old_timestamp,
+            signature,
+        };
+
+        // Verification should fail because max_age is 60s
+        let is_valid = verify_package(&alice_pk, &expired_package, 60);
+        assert!(!is_valid, "Expired package should have been rejected!");
+    }
+
+    #[test]
+    fn test_tamper_detection() {
+        let secp = Secp256k1::new();
+        let (alice_sk, alice_pk) = secp.generate_keypair(&mut OsRng);
+        let (bob_sk, bob_pk) = secp.generate_keypair(&mut OsRng);
+
+        let message = b"Legit message";
+        let timestamp = current_timestamp();
+
+        let (mut ciphertext, nonce) = encrypt_package(&alice_sk, &bob_pk, message);
+
+        // ATTACK: Man-in-the-Middle flips a bit in the ciphertext
+        ciphertext[0] ^= 0xFF;
+
+        // Even if the signature was valid for the ORIGINAL ciphertext,
+        // AES-GCM decryption handles integrity checks on the ciphertext itself.
+
+        // Attempt to decrypt tampered ciphertext
+        // decrypt_package uses .expect(), so we use std::panic::catch_unwind to test for panic
+        let result = std::panic::catch_unwind(|| {
+            decrypt_package(&bob_sk, &alice_pk, &ciphertext, &nonce)
+        });
+
+        assert!(result.is_err(), "Decryption should panic/fail on tampered ciphertext!");
+    }
+}
+
+
+
