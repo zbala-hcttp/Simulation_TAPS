@@ -5,12 +5,13 @@ use secp256k1::{PublicKey, SecretKey};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Serialize, Deserialize};
+use bincode;
 
 pub struct KeyPairs {
-    pub signers_keys: Vec<KeyPair>,      // (sk_i, pk_i)
-    pub combiner_keys: KeyPair,        // (sk_c, pk_c)
-    pub tracer_keys: KeyPair,            // (sk_e, pk_e)
-    pub tracing_keys: Vec<KeyPair>,      // (tau_i, h_i)
+    pub signers_keys: Vec<KeyPair>,
+    pub combiner_keys: KeyPair,
+    pub tracer_keys: KeyPair,
+    pub tracing_keys: Vec<KeyPair>,
 }
 
 impl KeyPairs {
@@ -68,7 +69,7 @@ impl SignerPackage {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CombinerPackage {
     pub kp_cs: KeyPair,
     pub pk: PK,
@@ -87,7 +88,7 @@ impl CombinerPackage {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TracerPackage {
     pub kp_t: KeyPair,
     pub pk: PK,
@@ -104,7 +105,74 @@ impl TracerPackage {
     }
 }
 
+pub struct Authority {
+    pub keys: KeyPairs,
+    pub identity_kp: IdentityKeyPair,
+    pub transport_kp: TransportKeyPair,
+}
 
+impl Authority {
+    pub fn new(n: usize) -> Self {
+        Authority {
+            keys: KeyPairs::new(n),
+            identity_kp: IdentityKeyPair::new(),
+            transport_kp: TransportKeyPair::new(),
+        }
+    }
+
+    /// Helper: Serializes, Encrypts (Transport), and Signs (Identity).
+    fn secure_package<T: Serialize>(
+        &self,
+        package: &T,
+        receiver_pk: &PublicKey
+    ) -> SecurePackage {
+
+        let plain_bytes = bincode::serialize(package)
+            .expect("Failed to serialize package");
+
+        // Encrypt with Ephemeral Key
+        let (ciphertext, nonce) = self.transport_kp.encrypt_to(receiver_pk, &plain_bytes);
+
+        let timestamp = current_timestamp();
+
+        // Sign with Identity Key
+        let signature = self.identity_kp.sign_data(
+            &ciphertext,
+            &nonce,
+            timestamp
+        );
+
+        SecurePackage {
+            ciphertext,
+            nonce,
+            timestamp,
+            signature,
+        }
+    }
+
+    // --- 1. Prepare Signer Package ---
+    pub fn prepare_signer_package(&self, index: usize, receiver_pk: &PublicKey) -> SecurePackage {
+        let pkg = SignerPackage::new(&self.keys, index);
+        self.secure_package(&pkg, receiver_pk)
+    }
+
+    // --- 2. Prepare Combiner Package ---
+    pub fn prepare_combiner_package(
+        &self,
+        quorum: Quorum,
+        receiver_pk: &PublicKey
+    ) -> SecurePackage {
+        // Pass the chosen quorum into the package
+        let pkg = CombinerPackage::new(&self.keys, quorum);
+        self.secure_package(&pkg, receiver_pk)
+    }
+
+    // --- 3. Prepare Tracer Package ---
+    pub fn prepare_tracer_package(&self, receiver_pk: &PublicKey) -> SecurePackage {
+        let pkg = TracerPackage::new(&self.keys);
+        self.secure_package(&pkg, receiver_pk)
+    }
+}
 
 
 

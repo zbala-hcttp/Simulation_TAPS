@@ -36,7 +36,7 @@ fn derive_aes_key(my_sk: &SecretKey, their_pk: &PublicKey) -> Key<Aes256Gcm> {
 }
 
 /// Encrypts data using AES-256-GCM + ECDH.
-pub fn encrypt_package(
+pub(crate) fn encrypt_package(
     sender_sk: &SecretKey,
     receiver_pk: &PublicKey, 
     plain_bytes: &[u8]
@@ -57,7 +57,7 @@ pub fn encrypt_package(
 }
 
 /// Decrypts data using AES-256-GCM + ECDH.
-pub fn decrypt_package(
+pub(crate) fn decrypt_package(
     receiver_sk: &SecretKey,
     sender_pk: &PublicKey,
     ciphertext: &[u8],
@@ -74,7 +74,7 @@ pub fn decrypt_package(
 }
 
 /// Signs the package contents (Ciphertext + Nonce + Timestamp).
-pub fn sign_package(
+pub(crate) fn sign_package(
     signer_sk: &SecretKey, 
     ciphertext: &[u8], 
     nonce: &[u8],
@@ -95,7 +95,7 @@ pub fn sign_package(
 }
 
 /// Verifies origin, integrity, and freshness.
-pub fn verify_package(
+pub(crate) fn verify_package(
     sender_pk: &PublicKey, 
     package: &SecurePackage,
     max_age_seconds: u64
@@ -120,6 +120,53 @@ pub fn verify_package(
     let msg = Message::from_digest(hasher.finalize().into());
 
     secp.verify_ecdsa(&msg, &package.signature, sender_pk).is_ok()
+}
+
+#[derive(Debug, Clone)]
+pub struct IdentityKeyPair {
+    sk: SecretKey,      // Private
+    pub pk: PublicKey,  // Public (Known to everyone)
+}
+
+impl IdentityKeyPair {
+    pub fn new() -> Self {
+        let secp = Secp256k1::new();
+        let (sk, pk) = secp.generate_keypair(&mut OsRng);
+        IdentityKeyPair { sk, pk }
+    }
+
+    pub fn sign_data(&self, ciphertext: &[u8], nonce: &[u8], timestamp: u64) -> Signature {
+        sign_package(&self.sk, ciphertext, nonce, timestamp)
+    }
+
+    pub fn verify_data(pk: &PublicKey, package: &SecurePackage) -> bool {
+        verify_package(pk, package, 60)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransportKeyPair {
+    sk: SecretKey,      // Private: Only accessible inside crypto.rs
+    pub pk: PublicKey,  // Public: Accessible everywhere
+}
+
+impl TransportKeyPair {
+    pub fn new() -> Self {
+        let secp = Secp256k1::new();
+        let (sk, pk) = secp.generate_keypair(&mut OsRng);
+        TransportKeyPair { sk, pk }
+    }
+
+    /// Encrypts data for a specific receiver using this keypair's SecretKey.
+    pub fn encrypt_to(&self, receiver_pk: &PublicKey, data: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        // Calls the internal helper function
+        encrypt_package(&self.sk, receiver_pk, data)
+    }
+
+    /// Decrypts a package sent to this keypair.
+    pub fn decrypt_from(&self, sender_pk: &PublicKey, ciphertext: &[u8], nonce: &[u8]) -> Vec<u8> {
+        decrypt_package(&self.sk, sender_pk, ciphertext, nonce)
+    }
 }
 
 
