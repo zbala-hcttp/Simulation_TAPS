@@ -92,7 +92,7 @@ pub(crate) fn sign_package(
     hasher.update(&buffer);
     let msg = Message::from_digest(hasher.finalize().into());
     
-    secp.sign_ecdsa(&msg, signer_sk)
+    secp.sign_ecdsa(msg, signer_sk)
 }
 
 /// Verifies origin, integrity, and freshness.
@@ -120,7 +120,7 @@ pub(crate) fn verify_package(
     hasher.update(&buffer);
     let msg = Message::from_digest(hasher.finalize().into());
 
-    secp.verify_ecdsa(&msg, &package.signature, sender_pk).is_ok()
+    secp.verify_ecdsa(msg, &package.signature, sender_pk).is_ok()
 }
 
 #[derive(Debug, Clone)]
@@ -132,7 +132,7 @@ pub struct IdentityKeyPair {
 impl IdentityKeyPair {
     pub fn new() -> Self {
         let secp = Secp256k1::new();
-        let (sk, pk) = secp.generate_keypair(&mut OsRng);
+        let (sk, pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
         IdentityKeyPair { sk, pk }
     }
 
@@ -154,7 +154,7 @@ pub struct TransportKeyPair {
 impl TransportKeyPair {
     pub fn new() -> Self {
         let secp = Secp256k1::new();
-        let (sk, pk) = secp.generate_keypair(&mut OsRng);
+        let (sk, pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
         TransportKeyPair { sk, pk }
     }
 
@@ -199,8 +199,8 @@ mod tests {
         let secp = Secp256k1::new();
 
         // 1. Setup Identities (Alice and Bob)
-        let (alice_sk, alice_pk) = secp.generate_keypair(&mut OsRng);
-        let (bob_sk, bob_pk) = secp.generate_keypair(&mut OsRng);
+        let (alice_sk, alice_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
+        let (bob_sk, bob_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
 
         // 2. Prepare Data
         let message = b"Attack at dawn! But securely.";
@@ -241,8 +241,8 @@ mod tests {
     #[test]
     fn test_replay_attack_prevention() {
         let secp = Secp256k1::new();
-        let (alice_sk, alice_pk) = secp.generate_keypair(&mut OsRng);
-        let (bob_sk, bob_pk) = secp.generate_keypair(&mut OsRng);
+        let (alice_sk, alice_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
+        let (bob_sk, bob_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
 
         let message = b"Old message";
 
@@ -267,8 +267,8 @@ mod tests {
     #[test]
     fn test_tamper_detection() {
         let secp = Secp256k1::new();
-        let (alice_sk, alice_pk) = secp.generate_keypair(&mut OsRng);
-        let (bob_sk, bob_pk) = secp.generate_keypair(&mut OsRng);
+        let (alice_sk, alice_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
+        let (bob_sk, bob_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
 
         let message = b"Legit message";
         let timestamp = current_timestamp();
