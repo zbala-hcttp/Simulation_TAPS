@@ -3,6 +3,23 @@ name = "simulation_taps"
 version = "0.1.0"
 edition = "2024"
 
+# Define the binaries
+[[bin]]
+name = "authority"
+path = "src/bin/authority.rs"
+
+[[bin]]
+name = "signer"
+path = "src/bin/signer.rs"
+
+[[bin]]
+name = "combiner"
+path = "src/bin/combiner.rs"
+
+[[bin]]
+name = "tracer"
+path = "src/bin/tracer.rs"
+
 [dependencies]
 taps = { path = "../TAPS" }
 secp256k1 = { version = "0.28.0", features = ["rand", "global-context", "serde"] }

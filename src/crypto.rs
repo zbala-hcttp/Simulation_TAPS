@@ -6,9 +6,10 @@ use aes_gcm::{
     Aes256Gcm, Key, Nonce
 };
 use std::time::{SystemTime, UNIX_EPOCH};
+use serde::{Serialize, Deserialize};
 
 /// Represents a secure package sent over the network.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurePackage {
     pub ciphertext: Vec<u8>,  
     pub nonce: Vec<u8>,       // AES-GCM Nonce (12 bytes)
