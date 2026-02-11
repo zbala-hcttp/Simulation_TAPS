@@ -73,15 +73,17 @@ impl SignerPackage {
 pub struct CombinerPackage {
     pub kp_cs: KeyPair,
     pub pk: PK,
+    pub(crate) t: usize,
     pub quo: Quorum,
     pub tks: TracingKeys,
 }
 
 impl CombinerPackage {
-    pub fn new(auth_keys: &KeyPairs, quo: Quorum) -> Self {
+    pub fn new(auth_keys: &KeyPairs, quo: Quorum, t:usize) -> Self {
         CombinerPackage {
             kp_cs: auth_keys.combiner_keys.clone(),
             pk: auth_keys.set_pk(),
+            t: t,
             quo,
             tks: TracingKeys::set(&auth_keys.tracing_keys),
         }
@@ -160,10 +162,11 @@ impl Authority {
     pub fn prepare_combiner_package(
         &self,
         quorum: Quorum,
+        t: usize,
         receiver_pk: &PublicKey
     ) -> SecurePackage {
         // Pass the chosen quorum into the package
-        let pkg = CombinerPackage::new(&self.keys, quorum);
+        let pkg = CombinerPackage::new(&self.keys, quorum, t);
         self.secure_package(&pkg, receiver_pk)
     }
 
