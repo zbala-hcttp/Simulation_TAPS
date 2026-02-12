@@ -2,7 +2,7 @@ use serde::{Serialize, Deserialize};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::error::Error;
-use crate::crypto::{SecurePackage, SignedPackage};
+use crate::crypto::{SecurePackage, BroadcastPackage};
 use secp256k1::PublicKey;
 
 /// The roles an actor can play in the system.
@@ -39,9 +39,9 @@ pub enum Message {
         package: SecurePackage
     },
 
-    BroadcastPackage {
+    Broadcast {
         pk: PublicKey,
-        package: SignedPackage
+        package: BroadcastPackage
     }
 }
 

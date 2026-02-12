@@ -18,7 +18,7 @@ pub struct SecurePackage {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SignedPackage {
+pub struct BroadcastPackage {
     pub text: Vec<u8>,        // The serialized payload (e.g., SignerPayload or TracerPayload)
     pub nonce: Vec<u8>,       // Random nonce for uniqueness (12 bytes)
     pub timestamp: u64,       // Replay protection
@@ -131,6 +131,33 @@ pub(crate) fn verify_package(
     secp.verify_ecdsa(msg, &package.signature, sender_pk).is_ok()
 }
 
+pub(crate) fn verify_broadcast_package(
+    sender_pk: &PublicKey,
+    package: &BroadcastPackage,
+    max_age_seconds: u64
+) -> bool {
+    let secp = Secp256k1::new();
+
+    // 1. Check Timestamp
+    let now = current_timestamp();
+    if package.timestamp > now || (now - package.timestamp) > max_age_seconds {
+        println!("[Crypto] Message expired or invalid time.");
+        return false;
+    }
+
+    // 2. Reconstruct Message
+    let mut buffer = Vec::new();
+    buffer.extend_from_slice(&package.text);
+    buffer.extend_from_slice(&package.nonce);
+    buffer.extend_from_slice(&package.timestamp.to_be_bytes());
+
+    let mut hasher = Sha256::new();
+    hasher.update(&buffer);
+    let msg = Message::from_digest(hasher.finalize().into());
+
+    secp.verify_ecdsa(msg, &package.signature, sender_pk).is_ok()
+}
+
 #[derive(Debug, Clone)]
 pub struct IdentityKeyPair {
     sk: SecretKey,      // Private
@@ -144,12 +171,16 @@ impl IdentityKeyPair {
         IdentityKeyPair { sk, pk }
     }
 
-    pub fn sign_data(&self, ciphertext: &[u8], nonce: &[u8], timestamp: u64) -> Signature {
-        sign_package(&self.sk, ciphertext, nonce, timestamp)
+    pub fn sign_data(&self, text: &[u8], nonce: &[u8], timestamp: u64) -> Signature {
+        sign_package(&self.sk, text, nonce, timestamp)
     }
 
     pub fn verify_data(pk: &PublicKey, package: &SecurePackage) -> bool {
         verify_package(pk, package, 60)
+    }
+
+    pub fn verify_broadcast_data(pk: &PublicKey, package: &BroadcastPackage) -> bool {
+        verify_broadcast_package(pk, package, 60)
     }
 }
 

@@ -597,7 +597,7 @@ impl Combiner {
 
     // --- Generic Signing Function ---
     // Takes any Serializable struct, wraps it in SignedPackage, and signs it.
-    pub fn sign_package<T: Serialize>(&self, payload: &T) -> SignedPackage {
+    pub fn sign_package<T: Serialize>(&self, payload: &T) -> BroadcastPackage {
 
         // 1. Serialize the Payload (e.g., using bincode)
         let text = bincode::serialize(payload).expect("Failed to serialize package");
@@ -617,7 +617,7 @@ impl Combiner {
         let signature = self.identity_kp.sign_data(&text, &nonce, timestamp);
 
         // 5. Construct Package
-        SignedPackage {
+        BroadcastPackage {
             text,
             nonce,
             timestamp,
@@ -628,7 +628,7 @@ impl Combiner {
     // --- Prepare Specific Packages ---
 
     // 1. For Signers: Contains R and c
-    pub fn prepare_signer_package(&self) -> SignedPackage {
+    pub fn prepare_signer_package(&self) -> BroadcastPackage {
         let R = self.R.as_ref().expect("R not set");
         let c = self.c.as_ref().expect("c not set");
 
@@ -641,7 +641,7 @@ impl Combiner {
     }
 
     // 2. For Tracer: Contains T, Sigma, c, alpha
-    pub fn prepare_tracer_package(&self, sigma: Sigma) -> (PublicKey, SignedPackage) {
+    pub fn prepare_tracer_package(&self, sigma: Sigma) -> (PublicKey, BroadcastPackage) {
         let T = self.T.as_ref().expect("T not set");
         let proof_struct = self.proofs.as_ref().expect("Proofs not computed");
         let c = self.c.as_ref().expect("c not set");

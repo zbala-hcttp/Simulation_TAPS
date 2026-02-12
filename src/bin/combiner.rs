@@ -6,7 +6,7 @@ use simulation_taps::{
 use secp256k1::PublicKey;
 use tokio::net::{TcpListener, TcpStream};
 use std::error::Error;
-use simulation_taps::crypto::SignedPackage;
+use simulation_taps::crypto::BroadcastPackage;
 
 // Network Constants
 const AUTHORITY_ADDR: &str = "127.0.0.1:8080";
@@ -129,12 +129,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("[Combiner] >> Round 2: Broadcasting Challenge...");
 
     // Prepare the authenticated package (R, c)
-    let signer_pkg: SignedPackage = combiner.prepare_signer_package(); // Added ? for Result
+    let signer_pkg: BroadcastPackage = combiner.prepare_signer_package(); // Added ? for Result
 
     // Broadcast to Signers
     for stream_opt in signer_streams.iter_mut() {
         if let Some(stream) = stream_opt {
-            network::send(stream, &Message::BroadcastPackage {pk: combiner.identity_kp.pk, package: signer_pkg.clone() }).await?;
+            network::send(stream, &Message::Broadcast {pk: combiner.identity_kp.pk, package: signer_pkg.clone() }).await?;
         }
     }
 
@@ -178,7 +178,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let Some(stream) = tracer_stream.as_mut() {
         println!("[Combiner] Sending Result to Tracer...");
         let (pk, tracer_pkg) = combiner.prepare_tracer_package(sigma);
-        network::send(stream, &Message::BroadcastPackage {pk: pk, package: tracer_pkg }).await?;
+        network::send(stream, &Message::Broadcast {pk: pk, package: tracer_pkg }).await?;
     }
 
     println!("\n[Combiner] Protocol Finished Successfully.");
