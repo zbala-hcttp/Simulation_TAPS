@@ -17,6 +17,14 @@ pub struct SecurePackage {
     pub signature: Signature, 
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SignedPackage {
+    pub text: Vec<u8>,        // The serialized payload (e.g., SignerPayload or TracerPayload)
+    pub nonce: Vec<u8>,       // Random nonce for uniqueness (12 bytes)
+    pub timestamp: u64,       // Replay protection
+    pub signature: Signature, // Signature over (text || nonce || timestamp)
+}
+
 /// Gets current Unix timestamp.
 pub fn current_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()

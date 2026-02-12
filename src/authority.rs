@@ -73,16 +73,18 @@ impl SignerPackage {
 pub struct CombinerPackage {
     pub kp_cs: KeyPair,
     pub pk: PK,
+    pub n: usize,
     pub(crate) t: usize,
     pub quo: Quorum,
     pub tks: TracingKeys,
 }
 
 impl CombinerPackage {
-    pub fn new(auth_keys: &KeyPairs, quo: Quorum, t:usize) -> Self {
+    pub fn new(auth_keys: &KeyPairs, quo: Quorum, n:usize, t:usize) -> Self {
         CombinerPackage {
             kp_cs: auth_keys.combiner_keys.clone(),
             pk: auth_keys.set_pk(),
+            n: n,
             t: t,
             quo,
             tks: TracingKeys::set(&auth_keys.tracing_keys),
@@ -153,27 +155,28 @@ impl Authority {
     }
 
     // --- 1. Prepare Signer Package ---
-    pub fn prepare_signer_package(&self, index: usize, receiver_pk: &PublicKey) -> SecurePackage {
+    pub fn prepare_signer_package(&self, index: usize, receiver_pk: &PublicKey) -> (PublicKey, SecurePackage) {
         let pkg = SignerPackage::new(&self.keys, index);
-        self.secure_package(&pkg, receiver_pk)
+        (self.identity_kp.pk, self.secure_package(&pkg, receiver_pk))
     }
 
     // --- 2. Prepare Combiner Package ---
     pub fn prepare_combiner_package(
         &self,
         quorum: Quorum,
+        n: usize,
         t: usize,
         receiver_pk: &PublicKey
-    ) -> SecurePackage {
+    ) -> (PublicKey, SecurePackage) {
         // Pass the chosen quorum into the package
-        let pkg = CombinerPackage::new(&self.keys, quorum, t);
-        self.secure_package(&pkg, receiver_pk)
+        let pkg = CombinerPackage::new(&self.keys, quorum, n, t);
+        (self.identity_kp.pk, self.secure_package(&pkg, receiver_pk))
     }
 
     // --- 3. Prepare Tracer Package ---
-    pub fn prepare_tracer_package(&self, receiver_pk: &PublicKey) -> SecurePackage {
+    pub fn prepare_tracer_package(&self, receiver_pk: &PublicKey) -> (PublicKey, SecurePackage) {
         let pkg = TracerPackage::new(&self.keys);
-        self.secure_package(&pkg, receiver_pk)
+        (self.identity_kp.pk, self.secure_package(&pkg, receiver_pk))
     }
 }
 

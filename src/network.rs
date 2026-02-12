@@ -2,7 +2,8 @@ use serde::{Serialize, Deserialize};
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::error::Error;
-use crate::crypto::SecurePackage;
+use crate::crypto::{SecurePackage, SignedPackage};
+use secp256k1::PublicKey;
 
 /// The roles an actor can play in the system.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
@@ -24,10 +25,24 @@ pub enum Message {
 
     /// Sent by Authority -> Actor containing their encrypted keys.
     Welcome {
+        pk: PublicKey,
         package: SecurePackage
     },
 
-    // We will add Round messages (Commit, Share) here later!
+    Commitment {
+        pk: PublicKey,
+        package: SecurePackage
+    },
+
+    Sign {
+        pk: PublicKey,
+        package: SecurePackage
+    },
+
+    BroadcastPackage {
+        pk: PublicKey,
+        package: SignedPackage
+    }
 }
 
 /// Helper: Send a message with a 4-byte length header.
