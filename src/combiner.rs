@@ -12,6 +12,7 @@ use crate::crypto::{IdentityKeyPair, TransportKeyPair};
 // We use the Commitment struct you just defined (public R only)
 use taps::protocol::taps::{PK, Quorum, Commitment};
 use crate::authority::CombinerPackage;
+use crate::signer::{CommitmentPackage, SigmaPackage};
 
 mod serde_scalar {
     use serde::{Deserialize, Deserializer, Serializer};
@@ -131,15 +132,16 @@ impl Combiner {
     }
 
     // --- Bootstrap: Load Configuration from Authority ---
-    pub fn load_from_package(
+    pub fn load_from_authority(
         &mut self,
         secure_pkg: &SecurePackage,
-        authority_pk: &PublicKey
+        authority_pk: &PublicKey,
+        identity_pk: &PublicKey
     ) -> Result<(), Error> {
 
         // 1. VERIFY Signature & Timestamp
         // Use the wrapper method in IdentityKeyPair
-        let is_valid = IdentityKeyPair::verify_data(authority_pk, secure_pkg);
+        let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
             eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
@@ -191,15 +193,16 @@ impl Combiner {
         }
     }
 
-    pub fn load_commitment
-    (&mut self,
-     signer_id: &usize,
-     secure_pkg: &SecurePackage,
-     signer_pk: &PublicKey
+    pub fn load_commitment(
+        &mut self,
+        signer_id: &usize,
+        secure_pkg: &SecurePackage,
+        signer_pk: &PublicKey,
+        identity_pk: &PublicKey
     ) -> Result<(), Error> {
         // 1. VERIFY Signature & Timestamp
         // Use the wrapper method in IdentityKeyPair
-        let is_valid = IdentityKeyPair::verify_data(signer_pk, secure_pkg);
+        let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
             eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
@@ -216,18 +219,18 @@ impl Combiner {
         );
 
         // 3. DESERIALIZE Configuration
-        let config: CombinerPackage = bincode::deserialize(&plaintext_bytes)
+        let config: CommitmentPackage = bincode::deserialize(&plaintext_bytes)
             .map_err(|_| Error::InvalidMessage)?;
 
         // 4. LOAD State
         println!("[Combiner] Bootstrap successful. Loading configuration...");
 
-        //handle_commitment(signer_id, config.comm);
+        self.handle_commitment(*signer_id, config.commitment.clone());
 
         // Optional: Log what we loaded
-        println!("[Combiner] Configuration Loaded:");
-        println!("           - Threshold (t): {}", config.t);
-        println!("           - Quorum Size:   {}", self.t.as_ref().unwrap());
+        println!("[Combiner] Commitment Loaded:");
+        println!("           - Signer ID: {}", *signer_id);
+        println!("           - Signer Commitment: {:?}", config.commitment.clone());
 
         Ok(())
     }
@@ -305,15 +308,30 @@ impl Combiner {
         Ok(())
     }
 
-    pub fn load_sigma
-    (&mut self,
-     signer_id: &usize,
-     secure_pkg: &SecurePackage,
-     signer_pk: &PublicKey
+    pub fn handle_sigma(&mut self, signer_id: usize, signature_share: Sign) {
+        if let Some(participant_count) = self.t {
+            // "t" acts as the size of participants
+            if signer_id < participant_count {
+                println!("[Combiner] Stored Sign (z) from Signer #{}", signer_id);
+                self.sigmas.insert(signer_id, signature_share);
+            } else {
+                println!("[Combiner] Rejected Sign: Signer #{} out of range (>= {})", signer_id, participant_count);
+            }
+        } else {
+            println!("[Combiner] Error: Participant count (t) not set.");
+        }
+    }
+
+    pub fn load_sigma(
+        &mut self,
+        signer_id: &usize,
+        secure_pkg: &SecurePackage,
+        signer_pk: &PublicKey,
+        identity_pk: &PublicKey
     ) -> Result<(), Error> {
         // 1. VERIFY Signature & Timestamp
         // Use the wrapper method in IdentityKeyPair
-        let is_valid = IdentityKeyPair::verify_data(signer_pk, secure_pkg);
+        let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
             eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
@@ -330,34 +348,19 @@ impl Combiner {
         );
 
         // 3. DESERIALIZE Configuration
-        let config: CombinerPackage = bincode::deserialize(&plaintext_bytes)
+        let config: SigmaPackage = bincode::deserialize(&plaintext_bytes)
             .map_err(|_| Error::InvalidMessage)?;
 
         // 4. LOAD State
         println!("[Combiner] Bootstrap successful. Loading configuration...");
 
-        //handle_sigma(signer_id, config.comm);
+        self.handle_sigma(*signer_id, config.z.clone());
 
         // Optional: Log what we loaded
         println!("[Combiner] Configuration Loaded:");
-        println!("           - Threshold (t): {}", config.t);
-        println!("           - Quorum Size:   {}", self.t.as_ref().unwrap());
+        println!("           - Sign: {:?}", config.z.clone());
 
         Ok(())
-    }
-
-    pub fn handle_sigma(&mut self, signer_id: usize, signature_share: Sign) {
-        if let Some(participant_count) = self.t {
-            // "t" acts as the size of participants
-            if signer_id < participant_count {
-                println!("[Combiner] Stored Sign (z) from Signer #{}", signer_id);
-                self.sigmas.insert(signer_id, signature_share);
-            } else {
-                println!("[Combiner] Rejected Sign: Signer #{} out of range (>= {})", signer_id, participant_count);
-            }
-        } else {
-            println!("[Combiner] Error: Participant count (t) not set.");
-        }
     }
 
     pub fn compute_aggregated_sign(&mut self) -> Result<(), Error> {
@@ -400,7 +403,7 @@ impl Combiner {
         // 3. Encrypt z -> C
         // We use the specific syntax you requested: ElGamalEncrypt::encrypt
         // Arguments: (randomness, message, key)
-        let C_cipher = ElGamalCiphertext::encrypt(
+        let c_cipher = ElGamalCiphertext::encrypt(
             &rho_secret,
             z_struct,
             kp_t
@@ -408,7 +411,7 @@ impl Combiner {
 
         // 4. Store State
         self.w_rho = Some(rho_secret); // Store the randomness rho
-        self.C = Some(C_cipher);       // Store the encrypted signature C
+        self.C = Some(c_cipher);       // Store the encrypted signature C
 
         println!("[Combiner] Encrypted z -> C. Stored w_rho (Secret) and C.");
 

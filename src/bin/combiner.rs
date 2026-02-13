@@ -1,7 +1,7 @@
 use simulation_taps::{
     combiner::Combiner,
     network::{self, Message, Role},
-    crypto::TransportKeyPair,
+    crypto::IdentityKeyPair,
 };
 use secp256k1::PublicKey;
 use tokio::net::{TcpListener, TcpStream};
@@ -42,12 +42,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 4. Receive Welcome Package
     let msg = network::receive(&mut auth_stream).await?;
     match msg {
-        Message::Welcome { pk, package } => {
+        Message::Secure { pk, identity_pk, package } => {
             println!("[Combiner] Received SecurePackage from Authority. Bootstrapping...");
-            combiner.load_from_package(&package, &pk)?;
+            let pubkey = PublicKey::from_slice(&pk)?;
+            let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
+            combiner.load_from_authority(&package, &pubkey, &identity_pubkey)?;
         },
         _ => return Err("Unexpected message from Authority".into()),
-    }
+    }    
 
     // FIX: Copy the value (usize) immediately. Do not keep a reference.
     let n_signers = combiner.n.unwrap();
@@ -112,9 +114,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if let Some(stream) = stream_opt {
             let msg = network::receive(stream).await?;
 
-            if let Message::Commitment { pk, package } = msg {
+            if let Message::Secure { pk, identity_pk, package } = msg {
                 // n_signers is a usize (copy), so it doesn't block mutable borrow of combiner
-                combiner.load_commitment(&id, &package, &pk)?;
+                let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
+                let pubkey = PublicKey::from_slice(&pk)?;
+                combiner.load_commitment(&id, &package, &pubkey, &identity_pubkey)?;
                 println!("[Combiner] Verified Commitment from Signer #{}", id);
             }
         }
@@ -142,9 +146,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for (id, stream_opt) in signer_streams.iter_mut().enumerate() {
         if let Some(stream) = stream_opt {
             let msg = network::receive(stream).await?;
-            // Assuming Message::Share has { pk, package } structure based on context
-            if let Message::Sign { pk, package } = msg {
-                combiner.load_sigma(&id, &package, &pk)?;
+            if let Message::Secure { pk, identity_pk, package } = msg {
+                let pubkey = PublicKey::from_slice(&pk)?;
+                let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
+                combiner.load_sigma(&id, &package, &pubkey, &identity_pubkey)?;
                 println!("[Combiner] Received Share from Signer #{}", id);
             }
         }
@@ -167,8 +172,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     combiner.compute_encrypted_bits()?;
     combiner.compute_phis()?;
     combiner.compute_blinds(n_signers)?; // n_signers is just a usize
-    combiner.compute_hats()?;
     combiner.compute_proofs()?;
+    combiner.compute_hats()?;
 
     // 4. Construct Final Sigma
     let sigma = combiner.construct_sigma(MESSAGE_BYTES)?;

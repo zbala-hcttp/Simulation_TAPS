@@ -9,14 +9,12 @@ use bincode;
 /// Step 1: The Public Nonce (R_i) sent to the Combiner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitmentPackage {
-    pub signer_id: usize,
     pub commitment: Commitment, // The public point of the nonce
 }
 
 /// Step 2: The Partial Signature (z_i) sent to the Combiner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SigmaPackage {
-    pub signer_id: usize,
     pub z: Sign,
 }
 
@@ -83,7 +81,6 @@ impl Signer {
 
         // 4. Create Package with only public info
         let pkg = CommitmentPackage {
-            signer_id: self.id,
             commitment: comm,
         };
 
@@ -106,7 +103,6 @@ impl Signer {
 
         // 3. Create Package
         let pkg = SigmaPackage {
-            signer_id: self.id,
             z: signature,
         };
 
