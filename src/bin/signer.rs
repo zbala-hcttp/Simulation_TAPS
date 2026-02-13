@@ -49,24 +49,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 4. Receive Credentials (Encrypted SignerPackage)
     let msg = network::receive(&mut auth_stream).await?;
 
-    // For simulation, we assume we trust the Authority's signature key (or it's the transport key)
-    // In a real system, this would be a hardcoded Root CA key.
-    let authority_pk = PublicKey::from_slice(&[0u8; 33]).unwrap_or(my_transport_pk);
-
     match msg {
-        Message::Welcome {pk, package } => {
+        Message::Secure {pk, identity_pk, package } => {
             println!("[Signer #{}] Received Credentials.", my_id);
 
-            // A. Verify
+            let transport_key = PublicKey::from_slice(&pk)?;
+            let identity_key = PublicKey::from_slice(&identity_pk)?;
+
+
             // Note: In a real system, we would verify against a pinned Authority PK.
             // Here we verify against the key provided in the message (Simulation Trust).
-            if !IdentityKeyPair::verify_data(&pk, &package) {
+            if !IdentityKeyPair::verify_data(&identity_key, &package) {
                 return Err("Authority Signature Invalid".into());
             }
 
             // B. Decrypt
             let plain = signer.transport_kp.decrypt_from(
-                &pk,
+                &transport_key,
                 &package.ciphertext,
                 &package.nonce
             );
@@ -114,8 +113,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Encrypt the commitment using the Combiner's Key we just received
     let comm_package = signer.set_commitment(&combiner_pk);
 
-    let msg_comm = Message::Commitment {
-        pk: my_transport_pk, // Send our PK so Combiner knows who encrypted it
+    let msg_comm = Message::Secure {
+        pk: my_transport_pk.serialize().to_vec(), // Send our PK so Combiner knows who encrypted it
+        identity_pk: signer.identity_kp.pk.serialize().to_vec(), // Send our Identity PK for signature verification
         package: comm_package,
     };
     network::send(&mut combiner_stream, &msg_comm).await?;
@@ -128,10 +128,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let msg = network::receive(&mut combiner_stream).await?;
 
     match msg {
-        Message::Broadcast {pk: pk, package: signed_pkg } => {
+        Message::Broadcast {identity_pk, package: signed_pkg } => {
             // 1. Verify Combiner's Signature
-            // We use the same 'combiner_pk' we trusted from the Handshake
-            if !IdentityKeyPair::verify_broadcast_data(&pk, &signed_pkg) {
+            // We use the same 'combiner_pk' we trusted from the Handsh
+            let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
+            if !IdentityKeyPair::verify_broadcast_data(&identity_pubkey, &signed_pkg) {
                 return Err("Security Alert: Invalid Signature on Challenge!".into());
             }
 
@@ -142,7 +143,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // 3. Compute Share (z_i)
             // We use the 'c' from the payload.
             // We encrypt the result for the Combiner using 'combiner_pk'.
-            let sigma_pkg = signer.prepare_sigma(&payload.c, &combiner_pk);
+            let sigma_pkg = signer.set_sigma(&payload.c, &combiner_pk);
 
             // 4. Send Share
             let msg_share = Message::Sign {

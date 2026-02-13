@@ -134,7 +134,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Broadcast to Signers
     for stream_opt in signer_streams.iter_mut() {
         if let Some(stream) = stream_opt {
-            network::send(stream, &Message::Broadcast {pk: combiner.identity_kp.pk, package: signer_pkg.clone() }).await?;
+            network::send(stream, &Message::Broadcast {identity_pk: combiner.identity_kp.pk.serialize().to_vec(), package: signer_pkg.clone() }).await?;
         }
     }
 
@@ -178,7 +178,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let Some(stream) = tracer_stream.as_mut() {
         println!("[Combiner] Sending Result to Tracer...");
         let (pk, tracer_pkg) = combiner.prepare_tracer_package(sigma);
-        network::send(stream, &Message::Broadcast {pk: pk, package: tracer_pkg }).await?;
+        network::send(stream, &Message::Broadcast {identity_pk: combiner.identity_kp.pk.serialize().to_vec(), package: tracer_pkg }).await?;
     }
 
     println!("\n[Combiner] Protocol Finished Successfully.");

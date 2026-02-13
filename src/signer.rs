@@ -92,7 +92,7 @@ impl Signer {
     }
 
     // --- Protocol Step 2: Send Sigma (Partial Signature) ---
-    pub fn prepare_sigma(&mut self, challenge: &Scalar, combiner_pk: &PublicKey) -> SecurePackage {
+    pub fn set_sigma(&mut self, challenge: &Scalar, combiner_pk: &PublicKey) -> SecurePackage {
         // 1. Retrieve State
         let comm = self.current_commitment.as_ref()
             .expect("Protocol Error: No commitment found for this round!");

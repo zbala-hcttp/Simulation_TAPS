@@ -23,14 +23,15 @@ pub enum Message {
         pk: Vec<u8>      // Transport Public Key (serialized)
     },
 
-    Secure {
+    /// Sent by Authority -> Actor containing their encrypted keys.
+    Welcome {
         pk: PublicKey,
         package: SecurePackage
     },
 
-    /// Sent by Authority -> Actor containing their encrypted keys.
-    Welcome {
-        pk: PublicKey,
+    Secure {
+        pk: Vec<u8>,
+        identity_pk: Vec<u8>,
         package: SecurePackage
     },
 
@@ -45,7 +46,7 @@ pub enum Message {
     },
 
     Broadcast {
-        pk: PublicKey,
+        identity_pk: Vec<u8>,
         package: BroadcastPackage
     }
 }

@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let (pk, pkg) = auth.prepare_signer_package(i, pk);
 
             // Send
-            network::send(stream, &Message::Welcome {pk: pk, package: pkg }).await?;
+            network::send(stream, &Message::Secure {pk: pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
             println!("[Authority] Sent SecurePackage to Signer #{}", i);
         }
     }
@@ -91,14 +91,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let Some((stream, pk)) = combiner.as_mut() {
         let quorum = auth.keys.set_quorum(2); // Threshold t=2
         let (pk, pkg) = auth.prepare_combiner_package(quorum, N_SIGNERS, 2, pk);
-        network::send(stream, &Message::Welcome {pk: pk, package: pkg }).await?;
+        network::send(stream, &Message::Secure {pk: pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
         println!("[Authority] Sent SecurePackage to Combiner");
     }
 
     // C. Send to Tracer
     if let Some((stream, pk)) = tracer.as_mut() {
         let (pk, pkg) = auth.prepare_tracer_package(pk);
-        network::send(stream, &Message::Welcome {pk: pk, package: pkg }).await?;
+        network::send(stream, &Message::Secure {pk: pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
         println!("[Authority] Sent SecurePackage to Tracer");
     }
 
