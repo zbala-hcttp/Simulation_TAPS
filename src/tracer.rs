@@ -1,6 +1,6 @@
 use taps::protocol::taps::*;
 use crate::{authority::TracerPackage, crypto::*, combiner};
-use secp256k1::{PublicKey, Scalar, Error};
+use secp256k1::{Error, PublicKey, Scalar, schnorr};
 use serde::{Serialize, Deserialize};
 use bincode;
 
@@ -123,8 +123,24 @@ impl Tracer {
         let kp_t = self.taps_kp.as_ref().unwrap();
         let c = self.c.as_ref().unwrap();
         let alpha = self.alpha.as_ref().unwrap();
-        Proofs::verify(proof, &sigma, &t, &v0, v, pk, tracing_kps, kp_t, *c, *alpha)
+        Proofs::verify(&proof, &sigma, &t, &v0, &v, &pk, &tracing_kps, &kp_t, &c, &alpha)
             .map_err(|e| format!("Proof verification failed: {:?}", e))
+    }
+
+    pub fn verify_sign(&self) {
+        let sigma = self.sigma.as_ref().unwrap();
+        let kp = self.taps_kp.as_ref().unwrap();
+        let ct = sigma.ct.clone();
+        let g_z_prime = ElGamalCiphertext::decrypt(&ct, &kp);
+
+        let R = sigma.R.clone();
+        let c = self.c.as_ref().unwrap();
+        let v0 = self.v0.as_ref().unwrap();
+        let v = self.v_vec.as_ref().unwrap();
+        let tr_keys = self.tracing_kps.as_ref().unwrap();
+        let b_i = decrypt_bits(&v0, &v, &tr_keys);
+        let pk = self.pk.as_ref().unwrap();
+        //let g_z : schnorr_signature(R, quo, c);      
     }
 
 }

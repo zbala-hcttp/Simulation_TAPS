@@ -181,7 +181,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // --- Send to Tracer ---
     if let Some(stream) = tracer_stream.as_mut() {
         println!("[Combiner] Sending Result to Tracer...");
-        let (pk, tracer_pkg) = combiner.prepare_tracer_package(sigma);
+        let (pk, tracer_pkg) = combiner.prepare_tracer_package(&sigma);
         network::send(stream, &Message::Broadcast {identity_pk: combiner.identity_kp.pk.serialize().to_vec(), package: tracer_pkg }).await?;
     }
 

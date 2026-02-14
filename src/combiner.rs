@@ -642,7 +642,7 @@ impl Combiner {
     }
 
     // 2. For Tracer: Contains T, Sigma, c, alpha
-    pub fn prepare_tracer_package(&self, sigma: Sigma) -> (PublicKey, BroadcastPackage) {
+    pub fn prepare_tracer_package(&self, sigma: &Sigma) -> (PublicKey, BroadcastPackage) {
         let T = self.T.as_ref().expect("T not set");
         let proof_struct = self.proofs.as_ref().expect("Proofs not computed");
         let c = self.c.as_ref().expect("c not set");
@@ -655,7 +655,7 @@ impl Combiner {
             v0: v0,
             v_vec: v,
             proof: proof_struct.clone(),
-            sigma: sigma, // Passed in from construct_sigma
+            sigma: sigma.clone(), // Passed in from construct_sigma
             c: *c,
             alpha: *alpha,
         };
