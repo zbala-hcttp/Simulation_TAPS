@@ -103,4 +103,10 @@ impl Tracer {
         Ok(())
     }
 
+    pub fn verify_sigma(&self, sigma: &Sigma, m: &[u8]) -> Result<bool, String> {
+        let pk = self.pk.as_ref().unwrap();
+        Sigma::verify(pk, m, sigma)
+            .map_err(|e| format!("Sigma verification failed: {:?}", e))
+    }
+
 }
