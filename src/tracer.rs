@@ -15,6 +15,8 @@ pub struct Tracer {
 
     // 3. TAPS Protocol State
     pub T: Option<ElGamalCiphertext>,
+    pub v0: Option<PublicKey>,
+    pub v_vec: Option<Vec<PublicKey>>,
     pub pk: Option<PK>,
     pub n: Option<usize>,
     pub proof: Option<Proofs>,
@@ -33,6 +35,8 @@ impl Tracer {
             pk: None,
             n: None,
             T: None,
+            v0: None,
+            v_vec: None,
             proof: None,
             sigma: None,
             c: None,
@@ -107,6 +111,20 @@ impl Tracer {
         let pk = self.pk.as_ref().unwrap();
         Sigma::verify(pk, m, sigma)
             .map_err(|e| format!("Sigma verification failed: {:?}", e))
+    }
+
+    pub fn verify_proof(&self, proof: &Proofs) -> Result<bool, String> {
+        let sigma = self.sigma.as_ref().unwrap();
+        let t = self.T.as_ref().unwrap();
+        let v0 = self.v0.as_ref().unwrap();
+        let v = self.v_vec.as_ref().unwrap();
+        let pk = self.pk.as_ref().unwrap();
+        let tracing_kps = self.tracing_kps.as_ref().unwrap();
+        let kp_t = self.taps_kp.as_ref().unwrap();
+        let c = self.c.as_ref().unwrap();
+        let alpha = self.alpha.as_ref().unwrap();
+        Proofs::verify(proof, &sigma, &t, &v0, v, pk, tracing_kps, kp_t, *c, *alpha)
+            .map_err(|e| format!("Proof verification failed: {:?}", e))
     }
 
 }

@@ -43,6 +43,8 @@ pub struct SignerPackage {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TracerPackage {
     pub T: ElGamalCiphertext,
+    pub v0: PublicKey,
+    pub v_vec: Vec<PublicKey>,
     pub proof: Proofs,
     pub sigma: Sigma,
     #[serde(with = "serde_scalar")]
@@ -645,9 +647,13 @@ impl Combiner {
         let proof_struct = self.proofs.as_ref().expect("Proofs not computed");
         let c = self.c.as_ref().expect("c not set");
         let alpha = self.alpha.as_ref().expect("alpha not set");
+        let v0 : PublicKey = self.v0.as_ref().expect("v0 not computed").clone();
+        let v = self.v_vec.as_ref().expect("v_vec not computed").clone();
 
         let payload = TracerPackage {
             T: T.clone(),
+            v0: v0,
+            v_vec: v,
             proof: proof_struct.clone(),
             sigma: sigma, // Passed in from construct_sigma
             c: *c,
