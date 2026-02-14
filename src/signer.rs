@@ -1,8 +1,9 @@
 use taps::protocol::taps::*;
 use crate::crypto::*;
-use secp256k1::{PublicKey, Scalar};
+use secp256k1::{PublicKey, Scalar, Error};
 use serde::{Serialize, Deserialize};
 use bincode;
+use crate::authority::SignerPackage;
 
 // --- Payload Structs (What we send over the wire) ---
 
@@ -68,6 +69,46 @@ impl Signer {
             timestamp,
             signature,
         }
+    }
+
+    pub fn load_from_authority(
+        &mut self,
+        secure_pkg: &SecurePackage,
+        authority_pk: &PublicKey,
+        identity_pk: &PublicKey
+    ) -> Result<(), Error> {
+
+        // 1. VERIFY Signature & Timestamp
+        // Use the wrapper method in IdentityKeyPair
+        let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
+
+        if !is_valid {
+            eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
+            return Err(Error::InvalidSignature);
+        }
+
+        // 2. DECRYPT Payload
+        // Use the wrapper method in TransportKeyPair
+        // This handles deriving the AES key and decrypting with the nonce
+        let plaintext_bytes = self.transport_kp.decrypt_from(
+            authority_pk,          // Sender PK (Authority)
+            &secure_pkg.ciphertext,
+            &secure_pkg.nonce
+        );
+
+        // 3. DESERIALIZE Configuration
+        let config: SignerPackage = bincode::deserialize(&plaintext_bytes)
+            .map_err(|_| Error::InvalidMessage)?;
+
+        // 4. LOAD State
+        println!("[Signer] Bootstrap successful. Loading configuration...");
+
+        self.taps_kp = Some(config.my_kp);
+
+        // Optional: Log what we loaded
+        println!("[Signer] Configuration Loaded:");
+
+        Ok(())
     }
 
     // --- Protocol Step 1: Send Commitment ---

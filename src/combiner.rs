@@ -7,12 +7,6 @@ use serde::{Serialize, Deserialize};
 use bincode;
 use std::collections::HashMap;
 
-// Internal Simulation Imports
-use crate::crypto::{IdentityKeyPair, TransportKeyPair};
-
-// External TAPS Library Imports
-// We use the Commitment struct you just defined (public R only)
-use taps::protocol::taps::{PK, Quorum, Commitment};
 use crate::authority::CombinerPackage;
 use crate::signer::{CommitmentPackage, SigmaPackage};
 
@@ -176,7 +170,7 @@ impl Combiner {
         // Optional: Log what we loaded
         println!("[Combiner] Configuration Loaded:");
         println!("           - Threshold (t): {}", config.t);
-        println!("           - Quorum Size:   {}", self.t.as_ref().unwrap());
+        println!("           - Quorum Size:   {}", self.n.as_ref().unwrap());
 
         Ok(())
     }
@@ -431,7 +425,7 @@ impl Combiner {
         let gamma_secret = Secret::create();
 
         // 3. Call Phis::set from taps.rs
-        // This handles the alpha^i * gamma * (1-b_i) logic internally
+        // This handles the alpha^(i+1) * gamma * (1-b_i) logic internally
         let phis_struct = Phis::set(alpha, &gamma_secret, quorum);
 
         // 4. Store State
@@ -655,7 +649,7 @@ impl Combiner {
         let payload = TracerPackage {
             T: T.clone(),
             proof: proof_struct.clone(),
-            sigma, // Passed in from construct_sigma
+            sigma: sigma, // Passed in from construct_sigma
             c: *c,
             alpha: *alpha,
         };

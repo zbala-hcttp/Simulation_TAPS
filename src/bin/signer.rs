@@ -63,16 +63,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 return Err("Authority Signature Invalid".into());
             }
 
-            // B. Decrypt
-            let plain = signer.transport_kp.decrypt_from(
-                &transport_key,
-                &package.ciphertext,
-                &package.nonce
-            );
-
-            // C. Load TAPS Key
-            let config: SignerPackage = bincode::deserialize(&plain)?;
-            signer.set_taps_key(config.my_kp);
+            signer.load_from_authority(&package, &transport_key, &identity_key)?;
             println!("[Signer #{}] TAPS Key Loaded.", my_id);
         },
         _ => return Err("Expected Welcome from Authority".into()),
