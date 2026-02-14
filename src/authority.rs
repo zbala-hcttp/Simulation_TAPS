@@ -1,9 +1,6 @@
-use aes_gcm::Key;
 use taps::protocol::taps::*;
 use crate::crypto::*;
-use secp256k1::{PublicKey, SecretKey};
-use rand::seq::SliceRandom;
-use rand::thread_rng;
+use secp256k1::{PublicKey};
 use serde::{Serialize, Deserialize};
 use bincode;
 

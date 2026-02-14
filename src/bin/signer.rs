@@ -1,5 +1,5 @@
 use simulation_taps::{
-    signer::{Signer, SigmaPackage},
+    signer::{Signer},
     authority::{SignerPackage},
     network::{self, Message, Role},
     crypto::IdentityKeyPair,
@@ -146,8 +146,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let sigma_pkg = signer.set_sigma(&payload.c, &combiner_pk);
 
             // 4. Send Share
-            let msg_share = Message::Sign {
-                pk: my_transport_pk,
+            let msg_share = Message::Secure {
+                pk: my_transport_pk.serialize().to_vec(),
+                identity_pk: signer.identity_kp.pk.serialize().to_vec(),
                 package: sigma_pkg,
             };
             network::send(&mut combiner_stream, &msg_share).await?;

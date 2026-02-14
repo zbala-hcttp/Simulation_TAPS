@@ -3,7 +3,6 @@ use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::error::Error;
 use crate::crypto::{SecurePackage, BroadcastPackage};
-use secp256k1::PublicKey;
 
 /// The roles an actor can play in the system.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
@@ -23,25 +22,9 @@ pub enum Message {
         pk: Vec<u8>      // Transport Public Key (serialized)
     },
 
-    /// Sent by Authority -> Actor containing their encrypted keys.
-    Welcome {
-        pk: PublicKey,
-        package: SecurePackage
-    },
-
     Secure {
         pk: Vec<u8>,
         identity_pk: Vec<u8>,
-        package: SecurePackage
-    },
-
-    Commitment {
-        pk: PublicKey,
-        package: SecurePackage
-    },
-
-    Sign {
-        pk: PublicKey,
         package: SecurePackage
     },
 

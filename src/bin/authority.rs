@@ -1,7 +1,6 @@
 use simulation_taps::{
     authority::Authority,
-    network::{self, Message, Role},
-    crypto::TransportKeyPair,
+    network::{self, Message, Role}
 };
 use tokio::net::{TcpListener, TcpStream};
 use secp256k1::PublicKey;

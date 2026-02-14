@@ -1,6 +1,8 @@
+#[warn(non_snake_case)]
+
 use taps::protocol::taps::*;
 use crate::crypto::*;
-use secp256k1::{PublicKey, SecretKey, Scalar, Error};
+use secp256k1::{PublicKey, Scalar, Error};
 use serde::{Serialize, Deserialize};
 use bincode;
 use std::collections::HashMap;

@@ -1,7 +1,6 @@
 use simulation_taps::{
     combiner::Combiner,
-    network::{self, Message, Role},
-    crypto::IdentityKeyPair,
+    network::{self, Message, Role}
 };
 use secp256k1::PublicKey;
 use tokio::net::{TcpListener, TcpStream};

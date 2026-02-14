@@ -1,6 +1,6 @@
 use taps::protocol::taps::*;
 use crate::crypto::*;
-use secp256k1::{PublicKey, SecretKey, Scalar};
+use secp256k1::{PublicKey, Scalar};
 use serde::{Serialize, Deserialize};
 use bincode;
 
