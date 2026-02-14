@@ -1,7 +1,7 @@
 use taps::protocol::taps::*;
 use crate::{authority::TracerPackage, crypto::*, combiner};
-use secp256k1::{Error, PublicKey, Scalar, schnorr};
-use serde::{Serialize, Deserialize};
+use secp256k1::{Error, PublicKey, Scalar};
+//use serde::{Serialize, Deserialize};
 use bincode;
 
 pub struct Tracer {
@@ -138,9 +138,12 @@ impl Tracer {
         let v0 = self.v0.as_ref().unwrap();
         let v = self.v_vec.as_ref().unwrap();
         let tr_keys = self.tracing_kps.as_ref().unwrap();
-        let b_i = decrypt_bits(&v0, &v, &tr_keys);
+        let b_i = decrypt_bits(&v0, &v, &tr_keys).expect("Failed to decrypt bits!");
         let pk = self.pk.as_ref().unwrap();
-        //let g_z : schnorr_signature(R, quo, c);      
+        let quo = Quorum::set(&pk, &b_i);
+        let g_z : PublicKey = schnorr_signature(&R, &quo, &c);
+
+        assert_eq!(g_z, g_z_prime, "Signature verification failed: g^z does not match decrypted value.")
     }
 
 }
