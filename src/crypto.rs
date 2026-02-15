@@ -55,12 +55,18 @@ pub(crate) fn encrypt_package(
     let key = derive_aes_key(sender_sk, receiver_pk);
     let cipher = Aes256Gcm::new(&key);
 
+    //println!("Key: {:?}", key);
+
     // 2. Generate unique Nonce (96-bits / 12 bytes)
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // Random nonce is critical!
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    //println!("[Crypto] Generated Nonce: {:?}", nonce);
+
 
     // 3. Encrypt
     let ciphertext = cipher.encrypt(&nonce, plain_bytes)
         .expect("Encryption failure!");
+
+    //println!("[Crypto] Encrypted package ({:?} bytes)", ciphertext);
 
     (ciphertext, nonce.to_vec())
 }
@@ -78,6 +84,12 @@ pub(crate) fn decrypt_package(
 
     // 2. Decrypt
     let nonce = Nonce::from_slice(nonce_bytes);
+
+    //println!("Key: {:?}", key);
+
+    //println!("[Crypto] Encrypted package ({:?} bytes)", ciphertext);
+
+    //println!("[Crypto] Generated Nonce: {:?}", nonce);
     cipher.decrypt(nonce, ciphertext)
         .expect("Decryption failed! Invalid key or tampered data.")
 }

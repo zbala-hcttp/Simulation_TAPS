@@ -152,9 +152,9 @@ impl Authority {
     }
 
     // --- 1. Prepare Signer Package ---
-    pub fn prepare_signer_package(&self, index: usize, receiver_pk: &PublicKey) -> (PublicKey, SecurePackage) {
+    pub fn prepare_signer_package(&self, index: usize, receiver_pk: &PublicKey) -> SecurePackage {
         let pkg = SignerPackage::new(&self.keys, index);
-        (self.identity_kp.pk, self.secure_package(&pkg, receiver_pk))
+        self.secure_package(&pkg, receiver_pk)
     }
 
     // --- 2. Prepare Combiner Package ---
@@ -164,16 +164,16 @@ impl Authority {
         n: usize,
         t: usize,
         receiver_pk: &PublicKey
-    ) -> (PublicKey, SecurePackage) {
+    ) -> SecurePackage {
         // Pass the chosen quorum into the package
         let pkg = CombinerPackage::new(&self.keys, quorum, n, t);
-        (self.identity_kp.pk, self.secure_package(&pkg, receiver_pk))
+        self.secure_package(&pkg, receiver_pk)
     }
 
     // --- 3. Prepare Tracer Package ---
-    pub fn prepare_tracer_package(&self, receiver_pk: &PublicKey) -> (PublicKey, SecurePackage) {
+    pub fn prepare_tracer_package(&self, receiver_pk: &PublicKey) -> SecurePackage {
         let pkg = TracerPackage::new(&self.keys);
-        (self.identity_kp.pk, self.secure_package(&pkg, receiver_pk))
+        self.secure_package(&pkg, receiver_pk)
     }
 }
 

@@ -78,10 +78,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for (i, opt) in signers.iter_mut().enumerate() {
         if let Some((stream, pk)) = opt {
             // Prepare package
-            let (pk, pkg) = auth.prepare_signer_package(i, pk);
+            let pkg = auth.prepare_signer_package(i, pk);
 
             // Send
-            network::send(stream, &Message::Secure {pk: pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
+            network::send(stream, &Message::Secure {pk: auth.transport_kp.pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
             println!("[Authority] Sent SecurePackage to Signer #{}", i);
         }
     }
@@ -89,15 +89,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // B. Send to Combiner (Requires Quorum)
     if let Some((stream, pk)) = combiner.as_mut() {
         let quorum = auth.keys.set_quorum(2); // Threshold t=2
-        let (pk, pkg) = auth.prepare_combiner_package(quorum, N_SIGNERS, 2, pk);
-        network::send(stream, &Message::Secure {pk: pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
+        let pkg = auth.prepare_combiner_package(quorum, N_SIGNERS, 2, pk);
+        network::send(stream, &Message::Secure {pk: auth.transport_kp.pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
         println!("[Authority] Sent SecurePackage to Combiner");
     }
 
     // C. Send to Tracer
     if let Some((stream, pk)) = tracer.as_mut() {
-        let (pk, pkg) = auth.prepare_tracer_package(pk);
-        network::send(stream, &Message::Secure {pk: pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
+        let pkg = auth.prepare_tracer_package(pk);
+        network::send(stream, &Message::Secure {pk: auth.transport_kp.pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
         println!("[Authority] Sent SecurePackage to Tracer");
     }
 
