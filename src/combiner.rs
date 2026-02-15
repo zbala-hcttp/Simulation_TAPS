@@ -1,5 +1,3 @@
-#[warn(non_snake_case)]
-
 use taps::protocol::taps::*;
 use crate::crypto::*;
 use secp256k1::{PublicKey, Scalar, Error};
@@ -51,6 +49,7 @@ pub struct TracerPackage {
     pub c: Scalar,
     #[serde(with = "serde_scalar")]
     pub alpha: Scalar,
+    pub m: Vec<u8>,
 }
 
 pub struct Combiner {
@@ -642,7 +641,7 @@ impl Combiner {
     }
 
     // 2. For Tracer: Contains T, Sigma, c, alpha
-    pub fn prepare_tracer_package(&self, sigma: &Sigma) -> (PublicKey, BroadcastPackage) {
+    pub fn prepare_tracer_package(&self, sigma: &Sigma, m: &[u8]) -> BroadcastPackage {
         let T = self.T.as_ref().expect("T not set");
         let proof_struct = self.proofs.as_ref().expect("Proofs not computed");
         let c = self.c.as_ref().expect("c not set");
@@ -658,8 +657,9 @@ impl Combiner {
             sigma: sigma.clone(), // Passed in from construct_sigma
             c: *c,
             alpha: *alpha,
+            m: m.to_vec(),
         };
 
-        (self.identity_kp.pk, self.sign_package(&payload))
+        self.sign_package(&payload)
     }
 }

@@ -23,6 +23,8 @@ pub struct Tracer {
     pub sigma: Option<Sigma>,
     pub c: Option<Scalar>,
     pub alpha: Option<Scalar>,
+
+    pub message: Option<Vec<u8>>,
 }
 
 impl Tracer {
@@ -41,6 +43,7 @@ impl Tracer {
             sigma: None,
             c: None,
             alpha: None,
+            message: None,
         }
     }
 

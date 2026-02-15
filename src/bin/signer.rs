@@ -1,6 +1,5 @@
 use simulation_taps::{
     signer::{Signer},
-    authority::{SignerPackage},
     network::{self, Message, Role},
     crypto::IdentityKeyPair,
 };
@@ -52,17 +51,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match msg {
         Message::Secure {pk, identity_pk, package } => {
             println!("[Signer #{}] Received Credentials.", my_id);
-
             let transport_key = PublicKey::from_slice(&pk)?;
             let identity_key = PublicKey::from_slice(&identity_pk)?;
-
-
-            // Note: In a real system, we would verify against a pinned Authority PK.
-            // Here we verify against the key provided in the message (Simulation Trust).
-            if !IdentityKeyPair::verify_data(&identity_key, &package) {
-                return Err("Authority Signature Invalid".into());
-            }
-
             signer.load_from_authority(&package, &transport_key, &identity_key)?;
             println!("[Signer #{}] TAPS Key Loaded.", my_id);
         },

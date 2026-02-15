@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let hello = Message::Hello {
         id: 0,
         role: Role::Combiner,
-        pk: transport_pk_bytes,
+        pk: transport_pk_bytes.clone(),
     };
     network::send(&mut auth_stream, &hello).await?;
 
@@ -88,6 +88,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         println!("[Combiner] Signer #{} verified.", id);
                         signer_streams[id] = Some(socket);
                         connected_count += 1;
+                        
+                        let hello = Message::Hello {
+                            id: 0,
+                            role: Role::Combiner,
+                            pk: transport_pk_bytes.clone(),
+                        };
+                        network::send(signer_streams[id].as_mut().unwrap(), &hello).await?;
+
                     }
                 },
                 Role::Tracer => {
@@ -181,7 +189,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // --- Send to Tracer ---
     if let Some(stream) = tracer_stream.as_mut() {
         println!("[Combiner] Sending Result to Tracer...");
-        let (pk, tracer_pkg) = combiner.prepare_tracer_package(&sigma);
+        let tracer_pkg = combiner.prepare_tracer_package(&sigma, &MESSAGE_BYTES);
         network::send(stream, &Message::Broadcast {identity_pk: combiner.identity_kp.pk.serialize().to_vec(), package: tracer_pkg }).await?;
     }
 
