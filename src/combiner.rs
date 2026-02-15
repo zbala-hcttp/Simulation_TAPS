@@ -306,7 +306,7 @@ impl Combiner {
     }
 
     pub fn handle_sigma(&mut self, signer_id: usize, signature_share: Sign) {
-        if let Some(participant_count) = self.t {
+        if let Some(participant_count) = self.n {
             // "t" acts as the size of participants
             if signer_id < participant_count {
                 println!("[Combiner] Stored Sign (z) from Signer #{}", signer_id);
