@@ -76,14 +76,11 @@ println!("[Combiner] Starting TAPS Combiner Node...");
         _ => return Err("Expected TracerPackage from Combiner".into()),
     }
 
-    let sigma = tracer.sigma.as_ref().expect("Sigma not set in Tracer");
-    let m = tracer.message.as_ref().expect("Message not set in Tracer");
-    let proof = tracer.proof.as_ref().expect("Proof not set in Tracer");
 
-    Tracer::verify_sigma(&tracer, &sigma, &m)?;
-    Tracer::verify_proof(&tracer, &proof)?;
-    Tracer::verify_sign(&tracer);
-
+    tracer.verify_sigma()?;
+    tracer.verify_proof()?;
+    tracer.verify_sign();
+    
     println!("[Tracer] Protocol Finished Successfully.");
 
     Ok(())

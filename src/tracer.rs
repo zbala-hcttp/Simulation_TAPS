@@ -85,64 +85,75 @@ impl Tracer {
 
     pub fn load_from_combiner(
         &mut self,
-        broadcast_pkg: &BroadcastPackage,
+        broadcast_pkg: &BroadcastPackage, // Assuming you defined this struct wrapper
         identity_pk: &PublicKey
     ) -> Result<(), Error> {
 
-        // 1. VERIFY Signature & Timestamp
-        // Use the wrapper method in IdentityKeyPair
+        // 1. VERIFY Signature
         let is_valid = IdentityKeyPair::verify_broadcast_data(identity_pk, broadcast_pkg);
-
         if !is_valid {
-            eprintln!("[Tracer] Error: BroadcastPackage verification failed (Invalid Signature or Expired).");
+            eprintln!("[Tracer] Error: BroadcastPackage verification failed.");
             return Err(Error::InvalidSignature);
         }
 
+        // 2. Deserialize
         let config: combiner::TracerPackage = bincode::deserialize(&broadcast_pkg.text)
             .map_err(|_| Error::InvalidMessage)?;
 
-        self.T = Some(config.T);
+        // 3. Load State
+        // Assuming config.T is the ElGamalCiphertext
+        self.T = Some(config.T.clone());
+        
+        // CRITICAL FIX: Extract v0 and v from T so verify_proof doesn't panic
+        // Assuming ElGamalCiphertext has fields or methods for these:
+        self.v0 = Some(config.v0.clone()); 
+        self.v_vec = Some(config.v_vec.clone()); 
+
         self.proof = Some(config.proof);
         self.sigma = Some(config.sigma);
         self.c = Some(config.c);
         self.alpha = Some(config.alpha);
+        self.message = Some(config.m.clone());
 
         Ok(())
     }
 
-    pub fn verify_sigma(&self, sigma: &Sigma, m: &[u8]) -> Result<bool, String> {
-        let pk = self.pk.as_ref().unwrap();
+    pub fn verify_sigma(&mut self) -> Result<bool, String> {
+        let sigma = self.sigma.as_ref().expect("Sigma not set in Tracer");
+        let m = self.message.as_ref().expect("Message not set in Tracer");
+        let pk = self.pk.as_ref().expect("PK not set in Tracer");
         Sigma::verify(pk, m, sigma)
             .map_err(|e| format!("Sigma verification failed: {:?}", e))
     }
 
-    pub fn verify_proof(&self, proof: &Proofs) -> Result<bool, String> {
-        let sigma = self.sigma.as_ref().unwrap();
-        let t = self.T.as_ref().unwrap();
-        let v0 = self.v0.as_ref().unwrap();
-        let v = self.v_vec.as_ref().unwrap();
-        let pk = self.pk.as_ref().unwrap();
-        let tracing_kps = self.tracing_kps.as_ref().unwrap();
-        let kp_t = self.taps_kp.as_ref().unwrap();
-        let c = self.c.as_ref().unwrap();
-        let alpha = self.alpha.as_ref().unwrap();
+    pub fn verify_proof(&mut self) -> Result<bool, String> {
+        let proof = self.proof.as_ref().expect("Proof not set in Tracer");
+        let sigma = self.sigma.as_ref().expect("Sigma not set in Tracer");
+        let t = self.T.as_ref().expect("T not set in Tracer");
+        let v0 = self.v0.as_ref().expect("v0 not set in Tracer");
+        let v = self.v_vec.as_ref().expect("v_vec not set in Tracer");
+        let pk = self.pk.as_ref().expect("PK not set in Tracer");
+        let tracing_kps = self.tracing_kps.as_ref().expect("Tracing keys not set in Tracer");
+        let kp_t = self.taps_kp.as_ref().expect("TAPS keypair not set in Tracer");
+        let c = self.c.as_ref().expect("C not set in Tracer");
+        let alpha = self.alpha.as_ref().expect("Alpha not set in Tracer");
         Proofs::verify(&proof, &sigma, &t, &v0, &v, &pk, &tracing_kps, &kp_t, &c, &alpha)
             .map_err(|e| format!("Proof verification failed: {:?}", e))
     }
 
-    pub fn verify_sign(&self) {
-        let sigma = self.sigma.as_ref().unwrap();
-        let kp = self.taps_kp.as_ref().unwrap();
+    pub fn verify_sign(&mut self) {
+        let sigma = self.sigma.as_ref().expect("Sigma not set in Tracer");
+        let kp = self.taps_kp.as_ref().expect("TAPS keypair not set in Tracer");
         let ct = sigma.ct.clone();
         let g_z_prime = ElGamalCiphertext::decrypt(&ct, &kp);
 
         let R = sigma.R.clone();
-        let c = self.c.as_ref().unwrap();
-        let v0 = self.v0.as_ref().unwrap();
-        let v = self.v_vec.as_ref().unwrap();
-        let tr_keys = self.tracing_kps.as_ref().unwrap();
+        let c = self.c.as_ref().expect("C not set in Tracer");
+        let v0 = self.v0.as_ref().expect("v0 not set in Tracer");
+        let v = self.v_vec.as_ref().expect("v_vec not set in Tracer");
+        let tr_keys = self.tracing_kps.as_ref().expect("Tracing keys not set in Tracer");
         let b_i = decrypt_bits(&v0, &v, &tr_keys).expect("Failed to decrypt bits!");
-        let pk = self.pk.as_ref().unwrap();
+        let pk = self.pk.as_ref().expect("PK not set in Tracer");
         let quo = Quorum::set(&pk, &b_i);
         let g_z : PublicKey = schnorr_signature(&R, &quo, &c);
 
