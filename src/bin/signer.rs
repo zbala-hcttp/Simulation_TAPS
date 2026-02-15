@@ -65,8 +65,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Phase 2: Combiner Interaction
     // =========================================================================
 
-    println!("[Signer #{}] Connecting to Combiner...", my_id);
-    let mut combiner_stream = TcpStream::connect(COMBINER_ADDR).await?;
+    println!("[Signer #{}] Connecting to Combiner at {}...", my_id, COMBINER_ADDR);
+
+    // FIX: Retry Loop. Keep trying until Combiner is ready.
+    let mut combiner_stream = loop {
+        match TcpStream::connect(COMBINER_ADDR).await {
+            Ok(stream) => {
+                println!("[Signer #{}] Connected to Combiner!", my_id);
+                break stream;
+            },
+            Err(_) => {
+                println!("[Signer #{}] Combiner not ready. Retrying in 2 seconds...", my_id);
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    };
 
     // 1. Handshake: Send Hello
     let hello_combiner = Message::Hello {
