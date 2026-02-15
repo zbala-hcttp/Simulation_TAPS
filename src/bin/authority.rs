@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // B. Send to Combiner (Requires Quorum)
     if let Some((stream, pk)) = combiner.as_mut() {
-        let quorum = auth.keys.set_quorum(2); // Threshold t=2
+        let quorum = auth.keys.set_quorum(N_SIGNERS); // Threshold t=2
         let pkg = auth.prepare_combiner_package(quorum, N_SIGNERS, 2, pk);
         network::send(stream, &Message::Secure {pk: auth.transport_kp.pk.serialize().to_vec(), identity_pk: auth.identity_kp.pk.serialize().to_vec(), package: pkg }).await?;
         println!("[Authority] Sent SecurePackage to Combiner");
