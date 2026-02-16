@@ -10,15 +10,19 @@ use crate::signer::{CommitmentPackage, SigmaPackage};
 
 mod serde_scalar {
     use secp256k1::Scalar;
-    use serde::{Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serializer, Serialize}; // Added Serialize trait
 
     // Serialize a single Scalar
     pub fn serialize<S>(scalar: &Scalar, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        // Writes: [Length (8 bytes)] + [Data (32 bytes)]
-        serializer.serialize_bytes(&scalar.to_be_bytes())
+        // OLD (Broken): serializer.serialize_bytes(...) -> Adds 8-byte length prefix!
+
+        // NEW (Fixed): Serialize as a fixed [u8; 32] array.
+        // Bincode writes this as 32 raw bytes (No length prefix).
+        let bytes = scalar.to_be_bytes();
+        bytes.serialize(serializer)
     }
 
     // Deserialize a single Scalar
@@ -26,19 +30,8 @@ mod serde_scalar {
     where
         D: Deserializer<'de>,
     {
-        // FIX: Deserialize as Vec<u8> to consume the length prefix!
-        let vec: Vec<u8> = Deserialize::deserialize(deserializer)?;
-
-        if vec.len() != 32 {
-            return Err(serde::de::Error::custom(format!(
-                "Scalar expected 32 bytes, got {}",
-                vec.len()
-            )));
-        }
-
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(&vec);
-
+        // This expects 32 raw bytes (matches the fixed writer above)
+        let bytes: [u8; 32] = Deserialize::deserialize(deserializer)?;
         Scalar::from_be_bytes(bytes).map_err(serde::de::Error::custom)
     }
 }
