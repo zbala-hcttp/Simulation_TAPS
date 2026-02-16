@@ -83,9 +83,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         _ => return Err("Expected TracerPackage from Combiner".into()),
     }
 
+    tracer.verify_sign();
     tracer.verify_sigma()?;
     tracer.verify_proof()?;
-    tracer.verify_sign();
 
     println!("[Tracer] Protocol Finished Successfully.");
 

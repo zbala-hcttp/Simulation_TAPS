@@ -96,10 +96,6 @@ impl Tracer {
             return Err(Error::InvalidSignature);
         }
 
-        //println!("[Debug] Receiver Input Size: {:?} bytes", broadcast_pkg.text);
-        // 2. Deserialize
-        /*let config: combiner::TracerPackage =
-            bincode::deserialize(&broadcast_pkg.text).map_err(|_| Error::InvalidMessage)?;*/
         let config: combiner::TracerPackage = match bincode::deserialize(&broadcast_pkg.text) {
             Ok(c) => c,
             Err(e) => {
@@ -131,7 +127,7 @@ impl Tracer {
         let sigma = self.sigma.as_ref().expect("Sigma not set in Tracer");
         let m = self.message.as_ref().expect("Message not set in Tracer");
         let pk = self.pk.as_ref().expect("PK not set in Tracer");
-        Sigma::verify(pk, m, sigma).map_err(|e| format!("Sigma verification failed: {:?}", e))
+        Sigma::verify(&pk, &m, &sigma).map_err(|e| format!("Sigma verification failed: {:?}", e))
     }
 
     pub fn verify_proof(&mut self) -> Result<bool, String> {
@@ -184,6 +180,7 @@ impl Tracer {
             .as_ref()
             .expect("Tracing keys not set in Tracer");
         let b_i = decrypt_bits(&v0, &v, &tr_keys).expect("Failed to decrypt bits!");
+        //println!("b_i: {:?}", b_i);
         let pk = self.pk.as_ref().expect("PK not set in Tracer");
         let quo = Quorum::set(&pk, &b_i);
         let g_z: PublicKey = schnorr_signature(&R, &quo, &c);
