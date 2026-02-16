@@ -1,16 +1,16 @@
-use taps::protocol::taps::*;
 use crate::crypto::*;
-use secp256k1::{PublicKey, Scalar, Error};
-use serde::{Serialize, Deserialize};
 use bincode;
+use secp256k1::{Error, PublicKey, Scalar};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use taps::protocol::taps::*;
 
 use crate::authority::CombinerPackage;
 use crate::signer::{CommitmentPackage, SigmaPackage};
 
 mod serde_scalar {
-    use serde::{Deserialize, Deserializer, Serializer};
     use secp256k1::Scalar;
+    use serde::{Deserialize, Deserializer, Serializer};
 
     // Serialize a single Scalar
     pub fn serialize<S>(scalar: &Scalar, serializer: S) -> Result<S::Ok, S::Error>
@@ -79,10 +79,10 @@ pub struct Combiner {
     pub alpha: Option<Scalar>, // Fiat-Shamir param
     pub beta: Option<Scalar>,  // Fiat-Shamir param
 
-    pub w_z: Option<Sign>,         // Aggregated signature (z) <--- CHANGED
-    pub w_rho: Option<Secret>,     // Randomness for Encrypting t <--- CHANGED
-    pub w_gamma: Option<Secret>,   // Randomness <--- CHANGED
-    pub w_psi: Option<Secret>,     // Randomness <--- CHANGED
+    pub w_z: Option<Sign>,       // Aggregated signature (z) <--- CHANGED
+    pub w_rho: Option<Secret>,   // Randomness for Encrypting t <--- CHANGED
+    pub w_gamma: Option<Secret>, // Randomness <--- CHANGED
+    pub w_psi: Option<Secret>,   // Randomness <--- CHANGED
     pub w_phi_i: Option<Phis>,
 
     pub v0: Option<PublicKey>,
@@ -133,15 +133,16 @@ impl Combiner {
         &mut self,
         secure_pkg: &SecurePackage,
         authority_pk: &PublicKey,
-        identity_pk: &PublicKey
+        identity_pk: &PublicKey,
     ) -> Result<(), Error> {
-
         // 1. VERIFY Signature & Timestamp
         // Use the wrapper method in IdentityKeyPair
         let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
-            eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
+            eprintln!(
+                "[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired)."
+            );
             return Err(Error::InvalidSignature);
         }
 
@@ -149,14 +150,14 @@ impl Combiner {
         // Use the wrapper method in TransportKeyPair
         // This handles deriving the AES key and decrypting with the nonce
         let plaintext_bytes = self.transport_kp.decrypt_from(
-            authority_pk,          // Sender PK (Authority)
+            authority_pk, // Sender PK (Authority)
             &secure_pkg.ciphertext,
-            &secure_pkg.nonce
+            &secure_pkg.nonce,
         );
 
         // 3. DESERIALIZE Configuration
-        let config: CombinerPackage = bincode::deserialize(&plaintext_bytes)
-            .map_err(|_| Error::InvalidMessage)?;
+        let config: CombinerPackage =
+            bincode::deserialize(&plaintext_bytes).map_err(|_| Error::InvalidMessage)?;
 
         // 4. LOAD State
         println!("[Combiner] Bootstrap successful. Loading configuration...");
@@ -183,7 +184,10 @@ impl Combiner {
                 println!("[Combiner] Stored Commitment from Signer #{}", signer_id);
                 self.commitments.insert(signer_id, comm);
             } else {
-                println!("[Combiner] Rejected Commitment: Signer #{} out of range (>= {})", signer_id, participant_count);
+                println!(
+                    "[Combiner] Rejected Commitment: Signer #{} out of range (>= {})",
+                    signer_id, participant_count
+                );
             }
         } else {
             println!("[Combiner] Error: Participant count (n) not set, cannot accept Commitment.");
@@ -195,14 +199,16 @@ impl Combiner {
         signer_id: &usize,
         secure_pkg: &SecurePackage,
         signer_pk: &PublicKey,
-        identity_pk: &PublicKey
+        identity_pk: &PublicKey,
     ) -> Result<(), Error> {
         // 1. VERIFY Signature & Timestamp
         // Use the wrapper method in IdentityKeyPair
         let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
-            eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
+            eprintln!(
+                "[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired)."
+            );
             return Err(Error::InvalidSignature);
         }
 
@@ -210,14 +216,14 @@ impl Combiner {
         // Use the wrapper method in TransportKeyPair
         // This handles deriving the AES key and decrypting with the nonce
         let plaintext_bytes = self.transport_kp.decrypt_from(
-            &signer_pk,          // Sender PK (Authority)
+            &signer_pk, // Sender PK (Authority)
             &secure_pkg.ciphertext,
-            &secure_pkg.nonce
+            &secure_pkg.nonce,
         );
 
         // 3. DESERIALIZE Configuration
-        let config: CommitmentPackage = bincode::deserialize(&plaintext_bytes)
-            .map_err(|_| Error::InvalidMessage)?;
+        let config: CommitmentPackage =
+            bincode::deserialize(&plaintext_bytes).map_err(|_| Error::InvalidMessage)?;
 
         // 4. LOAD State
         println!("[Combiner] Bootstrap successful. Loading configuration...");
@@ -227,7 +233,10 @@ impl Combiner {
         // Optional: Log what we loaded
         println!("[Combiner] Commitment Loaded:");
         println!("           - Signer ID: {}", *signer_id);
-        println!("           - Signer Commitment: {:?}", config.commitment.clone());
+        println!(
+            "           - Signer Commitment: {:?}",
+            config.commitment.clone()
+        );
 
         Ok(())
     }
@@ -265,10 +274,8 @@ impl Combiner {
 
     // --- Protocol Step: Compute Challenge & Parameters (Phase 1) ---
 
-    pub fn compute_parameters(
-        &mut self,
-        message: &[u8]
-    ) -> Result<(), Error> { // Returns unit
+    pub fn compute_parameters(&mut self, message: &[u8]) -> Result<(), Error> {
+        // Returns unit
 
         let pk = self.pk.as_ref().expect("PK not set");
         let t_val = self.t.expect("Threshold t not set");
@@ -287,7 +294,10 @@ impl Combiner {
         // Encrypt using psi
         let T_cipher = ElGamalCiphertext::encrypt_value(&psi_secret, &t_scalar);
 
-        let R= self.R.as_ref().expect("Aggregated Nonce R not computed yet");
+        let R = self
+            .R
+            .as_ref()
+            .expect("Aggregated Nonce R not computed yet");
         // 3. Compute Protocol Parameters (c, alpha, beta)
         let (c, alpha, beta) = get_parameters(pk, &T_cipher, R, message);
 
@@ -312,7 +322,10 @@ impl Combiner {
                 println!("[Combiner] Stored Sign (z) from Signer #{}", signer_id);
                 self.sigmas.insert(signer_id, signature_share);
             } else {
-                println!("[Combiner] Rejected Sign: Signer #{} out of range (>= {})", signer_id, participant_count);
+                println!(
+                    "[Combiner] Rejected Sign: Signer #{} out of range (>= {})",
+                    signer_id, participant_count
+                );
             }
         } else {
             println!("[Combiner] Error: Participant count (t) not set.");
@@ -324,14 +337,16 @@ impl Combiner {
         signer_id: &usize,
         secure_pkg: &SecurePackage,
         signer_pk: &PublicKey,
-        identity_pk: &PublicKey
+        identity_pk: &PublicKey,
     ) -> Result<(), Error> {
         // 1. VERIFY Signature & Timestamp
         // Use the wrapper method in IdentityKeyPair
         let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
-            eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
+            eprintln!(
+                "[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired)."
+            );
             return Err(Error::InvalidSignature);
         }
 
@@ -339,14 +354,14 @@ impl Combiner {
         // Use the wrapper method in TransportKeyPair
         // This handles deriving the AES key and decrypting with the nonce
         let plaintext_bytes = self.transport_kp.decrypt_from(
-            &signer_pk,          // Sender PK (Authority)
+            &signer_pk, // Sender PK (Authority)
             &secure_pkg.ciphertext,
-            &secure_pkg.nonce
+            &secure_pkg.nonce,
         );
 
         // 3. DESERIALIZE Configuration
-        let config: SigmaPackage = bincode::deserialize(&plaintext_bytes)
-            .map_err(|_| Error::InvalidMessage)?;
+        let config: SigmaPackage =
+            bincode::deserialize(&plaintext_bytes).map_err(|_| Error::InvalidMessage)?;
 
         // 4. LOAD State
         println!("[Combiner] Bootstrap successful. Loading configuration...");
@@ -389,9 +404,11 @@ impl Combiner {
     // --- Protocol Step: Encrypt Signature (C) ---
 
     pub fn compute_encrypted_signature(&mut self, kp_t: &KeyPair) -> Result<(), Error> {
-
         // Get the aggregated signature 'z' we computed earlier
-        let z_struct = self.w_z.as_ref().expect("w_z (Aggregated Signature) not computed yet");
+        let z_struct = self
+            .w_z
+            .as_ref()
+            .expect("w_z (Aggregated Signature) not computed yet");
 
         // 2. Generate Randomness (rho)
         // This is the "secret" we create here to encrypt z.
@@ -400,15 +417,11 @@ impl Combiner {
         // 3. Encrypt z -> C
         // We use the specific syntax you requested: ElGamalEncrypt::encrypt
         // Arguments: (randomness, message, key)
-        let c_cipher = ElGamalCiphertext::encrypt(
-            &rho_secret,
-            z_struct,
-            kp_t
-        );
+        let c_cipher = ElGamalCiphertext::encrypt(&rho_secret, z_struct, kp_t);
 
         // 4. Store State
         self.w_rho = Some(rho_secret); // Store the randomness rho
-        self.C = Some(c_cipher);       // Store the encrypted signature C
+        self.C = Some(c_cipher); // Store the encrypted signature C
 
         println!("[Combiner] Encrypted z -> C. Stored w_rho (Secret) and C.");
 
@@ -444,7 +457,10 @@ impl Combiner {
 
     pub fn compute_encrypted_bits(&mut self) -> Result<(), Error> {
         // 1. Retrieve Context
-        let gamma_secret = self.w_gamma.as_ref().expect("w_gamma (Secret Gamma) not computed yet");
+        let gamma_secret = self
+            .w_gamma
+            .as_ref()
+            .expect("w_gamma (Secret Gamma) not computed yet");
         let quorum = self.quorum.as_ref().expect("Quorum not set");
         let tks = self.tks.as_ref().expect("Tracing Keys not set");
 
@@ -472,7 +488,10 @@ impl Combiner {
 
         // Store State
         self.blinds = Some(blinds_struct);
-        println!("[Combiner] Computed Blinds (Randomness k) for n={} participants.", n);
+        println!(
+            "[Combiner] Computed Blinds (Randomness k) for n={} participants.",
+            n
+        );
 
         Ok(())
     }
@@ -484,21 +503,17 @@ impl Combiner {
         let blinds = self.blinds.as_ref().expect("Blinds not computed");
         let pk = self.pk.as_ref().expect("PK not set");
         let tks = self.tks.as_ref().expect("Tracing Keys not set");
-        let v_vec = self.v_vec.as_ref().expect("Encrypted Bits (v_vec) not computed");
+        let v_vec = self
+            .v_vec
+            .as_ref()
+            .expect("Encrypted Bits (v_vec) not computed");
         let c = self.c.as_ref().expect("Challenge c not set");
         let alpha = self.alpha.as_ref().expect("Alpha not set");
 
         // 2. Call Proofs::compute_proofs from taps.rs
         // Arguments: (bli, pk, h_i_vec, v_i, c, alpha)
         // Note: h_i_vec maps to tks (TracingKeys) in your description
-        let proofs_struct = Proofs::compute_proofs(
-            blinds,
-            pk,
-            tks,
-            v_vec,
-            c,
-            alpha
-        );
+        let proofs_struct = Proofs::compute_proofs(blinds, pk, tks, v_vec, c, alpha);
 
         // 3. Store State
         self.proofs = Some(proofs_struct);
@@ -522,14 +537,7 @@ impl Combiner {
 
         // 2. Construct Temporary 'Witnesses' Struct
         // This bundles the secrets just for the calculation
-        let witnesses_struct = Witnesses::set(
-            z,
-            rho,
-            gamma,
-            psi,
-            quorum,
-            phis
-        );
+        let witnesses_struct = Witnesses::set(z, rho, gamma, psi, quorum, phis);
 
         // 3. Retrieve Challenge & Blinds
         let beta = self.beta.as_ref().expect("Beta (Challenge) not set");
@@ -552,14 +560,19 @@ impl Combiner {
     pub fn construct_pi(&self) -> Result<Pi, Error> {
         // 1. Retrieve Context
         // We clone beta (Scalar is Copy) and hats (Clone)
-        let beta = self.beta.as_ref().expect("Beta (Challenge) not set").clone();
-        let hats = self.hats.as_ref().expect("Hats (Responses) not computed").clone();
+        let beta = self
+            .beta
+            .as_ref()
+            .expect("Beta (Challenge) not set")
+            .clone();
+        let hats = self
+            .hats
+            .as_ref()
+            .expect("Hats (Responses) not computed")
+            .clone();
 
         // 2. Construct Pi
-        let pi_struct = Pi {
-            beta,
-            hats,
-        };
+        let pi_struct = Pi { beta, hats };
 
         println!("[Combiner] Constructed Pi (Proof Package).");
 
@@ -569,7 +582,6 @@ impl Combiner {
     // --- Protocol Step: Construct Final Signature (Sigma) ---
 
     pub fn construct_sigma(&self, message: &[u8]) -> Result<Sigma, Error> {
-
         // 1. Construct Pi (Proof)
         // We use the helper method we defined earlier to assemble Beta + Hats
         let pi = self.construct_pi()?;
@@ -582,13 +594,7 @@ impl Combiner {
         // 3. Call Sigma::sign from taps.rs
         // Arguments: (kp, message, R, C, pi)
         // This generates the final Schnorr signature over the whole package
-        let sigma = Sigma::sign(
-            taps_kp,
-            message,
-            R,
-            C,
-            pi
-        );
+        let sigma = Sigma::sign(taps_kp, message, R, C, pi);
 
         println!("[Combiner] Constructed Final Sigma.");
 
@@ -598,7 +604,6 @@ impl Combiner {
     // --- Generic Signing Function ---
     // Takes any Serializable struct, wraps it in SignedPackage, and signs it.
     pub fn sign_package<T: Serialize>(&self, payload: &T) -> BroadcastPackage {
-
         // 1. Serialize the Payload (e.g., using bincode)
         let text = bincode::serialize(payload).expect("Failed to serialize package");
 
@@ -632,10 +637,7 @@ impl Combiner {
         let R = self.R.as_ref().expect("R not set");
         let c = self.c.as_ref().expect("c not set");
 
-        let payload = SignerPackage {
-            R: *R,
-            c: *c,
-        };
+        let payload = SignerPackage { R: *R, c: *c };
 
         self.sign_package(&payload)
     }
@@ -646,7 +648,7 @@ impl Combiner {
         let proof_struct = self.proofs.as_ref().expect("Proofs not computed");
         let c = self.c.as_ref().expect("c not set");
         let alpha = self.alpha.as_ref().expect("alpha not set");
-        let v0 : PublicKey = self.v0.as_ref().expect("v0 not computed").clone();
+        let v0: PublicKey = self.v0.as_ref().expect("v0 not computed").clone();
         let v = self.v_vec.as_ref().expect("v_vec not computed").clone();
 
         let payload = TracerPackage {

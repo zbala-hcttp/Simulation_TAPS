@@ -1,11 +1,11 @@
+use secp256k1::PublicKey;
+use simulation_taps::crypto::BroadcastPackage;
 use simulation_taps::{
     combiner::Combiner,
-    network::{self, Message, Role}
+    network::{self, Message, Role},
 };
-use secp256k1::PublicKey;
-use tokio::net::{TcpListener, TcpStream};
 use std::error::Error;
-use simulation_taps::crypto::BroadcastPackage;
+use tokio::net::{TcpListener, TcpStream};
 
 // Network Constants
 const AUTHORITY_ADDR: &str = "127.0.0.1:8080";
@@ -23,7 +23,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // =========================================================================
 
     // 1. Connect to Authority
-    println!("[Combiner] Connecting to Authority at {}...", AUTHORITY_ADDR);
+    println!(
+        "[Combiner] Connecting to Authority at {}...",
+        AUTHORITY_ADDR
+    );
     let mut auth_stream = TcpStream::connect(AUTHORITY_ADDR).await?;
 
     // 2. Generate Ephemeral Transport Keys
@@ -41,20 +44,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // 4. Receive Welcome Package
     let msg = network::receive(&mut auth_stream).await?;
     match msg {
-        Message::Secure { pk, identity_pk, package } => {
+        Message::Secure {
+            pk,
+            identity_pk,
+            package,
+        } => {
             println!("[Combiner] Received SecurePackage from Authority. Bootstrapping...");
             let pubkey = PublicKey::from_slice(&pk)?;
             let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
             combiner.load_from_authority(&package, &pubkey, &identity_pubkey)?;
-        },
+        }
         _ => return Err("Unexpected message from Authority".into()),
-    }    
+    }
 
     // FIX: Copy the value (usize) immediately. Do not keep a reference.
     let n_signers = combiner.n.unwrap();
 
     println!("[Combiner] Bootstrap Complete. Quorum Size: {}", n_signers);
-
 
     // =========================================================================
     // Phase 2: Network Setup (Server)
@@ -66,14 +72,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let expected_connections = n_signers + 1;
 
     // Fix: Explicit type annotation for the vector
-    let mut signer_streams: Vec<Option<TcpStream>> = (0..n_signers)
-        .map(|_| None)
-        .collect();
+    let mut signer_streams: Vec<Option<TcpStream>> = (0..n_signers).map(|_| None).collect();
 
     let mut tracer_stream: Option<TcpStream> = None;
     let mut connected_count = 0;
 
-    println!("[Combiner] Waiting for {} participants...", expected_connections);
+    println!(
+        "[Combiner] Waiting for {} participants...",
+        expected_connections
+    );
 
     while connected_count < expected_connections {
         let (mut socket, addr) = listener.accept().await?;
@@ -88,27 +95,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         println!("[Combiner] Signer #{} verified.", id);
                         signer_streams[id] = Some(socket);
                         connected_count += 1;
-                        
+
                         let hello = Message::Hello {
                             id: 0,
                             role: Role::Combiner,
                             pk: transport_pk_bytes.clone(),
                         };
                         network::send(signer_streams[id].as_mut().unwrap(), &hello).await?;
-
                     }
-                },
+                }
                 Role::Tracer => {
                     println!("[Combiner] Tracer verified.");
                     tracer_stream = Some(socket);
                     connected_count += 1;
-                },
-                _ => {},
+                }
+                _ => {}
             }
         }
     }
     println!("[Combiner] All participants connected. Starting Protocol.\n");
-
 
     // =========================================================================
     // Phase 3: Protocol Execution
@@ -121,7 +126,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if let Some(stream) = stream_opt {
             let msg = network::receive(stream).await?;
 
-            if let Message::Secure { pk, identity_pk, package } = msg {
+            if let Message::Secure {
+                pk,
+                identity_pk,
+                package,
+            } = msg
+            {
                 // n_signers is a usize (copy), so it doesn't block mutable borrow of combiner
                 let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
                 let pubkey = PublicKey::from_slice(&pk)?;
@@ -145,7 +155,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Broadcast to Signers
     for stream_opt in signer_streams.iter_mut() {
         if let Some(stream) = stream_opt {
-            network::send(stream, &Message::Broadcast {identity_pk: combiner.identity_kp.pk.serialize().to_vec(), package: signer_pkg.clone() }).await?;
+            network::send(
+                stream,
+                &Message::Broadcast {
+                    identity_pk: combiner.identity_kp.pk.serialize().to_vec(),
+                    package: signer_pkg.clone(),
+                },
+            )
+            .await?;
         }
     }
 
@@ -153,7 +170,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for (id, stream_opt) in signer_streams.iter_mut().enumerate() {
         if let Some(stream) = stream_opt {
             let msg = network::receive(stream).await?;
-            if let Message::Secure { pk, identity_pk, package } = msg {
+            if let Message::Secure {
+                pk,
+                identity_pk,
+                package,
+            } = msg
+            {
                 let pubkey = PublicKey::from_slice(&pk)?;
                 let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
                 combiner.load_sigma(&id, &package, &pubkey, &identity_pubkey)?;
@@ -190,7 +212,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if let Some(stream) = tracer_stream.as_mut() {
         println!("[Combiner] Sending Result to Tracer...");
         let tracer_pkg = combiner.prepare_tracer_package(&sigma, &MESSAGE_BYTES);
-        network::send(stream, &Message::Broadcast {identity_pk: combiner.identity_kp.pk.serialize().to_vec(), package: tracer_pkg }).await?;
+        network::send(
+            stream,
+            &Message::Broadcast {
+                identity_pk: combiner.identity_kp.pk.serialize().to_vec(),
+                package: tracer_pkg,
+            },
+        )
+        .await?;
     }
 
     println!("\n[Combiner] Protocol Finished Successfully.");

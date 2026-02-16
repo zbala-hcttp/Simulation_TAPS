@@ -1,33 +1,36 @@
-use secp256k1::{Secp256k1, SecretKey, PublicKey, Message, ecdh::SharedSecret};
-use secp256k1::ecdsa::Signature;
-use sha2::{Sha256, Digest};
 use aes_gcm::{
+    Aes256Gcm, Key, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
-    Aes256Gcm, Key, Nonce
 };
+use secp256k1::ecdsa::Signature;
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey, ecdh::SharedSecret};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
 
 /// Represents a secure package sent over the network.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurePackage {
-    pub ciphertext: Vec<u8>,  
-    pub nonce: Vec<u8>,       // AES-GCM Nonce (12 bytes)
-    pub timestamp: u64,       
-    pub signature: Signature, 
+    pub ciphertext: Vec<u8>,
+    pub nonce: Vec<u8>, // AES-GCM Nonce (12 bytes)
+    pub timestamp: u64,
+    pub signature: Signature,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BroadcastPackage {
-    pub text: Vec<u8>,        // The serialized payload (e.g., SignerPayload or TracerPayload)
-    pub nonce: Vec<u8>,       // Random nonce for uniqueness (12 bytes)
-    pub timestamp: u64,       // Replay protection
+    pub text: Vec<u8>,  // The serialized payload (e.g., SignerPayload or TracerPayload)
+    pub nonce: Vec<u8>, // Random nonce for uniqueness (12 bytes)
+    pub timestamp: u64, // Replay protection
     pub signature: Signature, // Signature over (text || nonce || timestamp)
 }
 
 /// Gets current Unix timestamp.
 pub fn current_timestamp() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 /// derives a 32-byte AES key from (My_SK, Their_PK) using ECDH.
@@ -35,7 +38,7 @@ fn derive_aes_key(my_sk: &SecretKey, their_pk: &PublicKey) -> Key<Aes256Gcm> {
     // 1. Compute Shared Secret (ECDH)
     // This creates a point P = my_sk * their_pk
     let shared_point = SharedSecret::new(their_pk, my_sk);
-    
+
     // 2. Hash it to get a uniform 32-byte key
     // SharedSecret implements AsRef<[u8]>, which gives the X-coordinate hash usually.
     // To be perfectly explicit/safe, we hash the bytes provided by the library.
@@ -47,10 +50,11 @@ fn derive_aes_key(my_sk: &SecretKey, their_pk: &PublicKey) -> Key<Aes256Gcm> {
 /// Encrypts data using AES-256-GCM + ECDH.
 pub(crate) fn encrypt_package(
     sender_sk: &SecretKey,
-    receiver_pk: &PublicKey, 
-    plain_bytes: &[u8]
-) -> (Vec<u8>, Vec<u8>) { // Returns (Ciphertext, Nonce)
-    
+    receiver_pk: &PublicKey,
+    plain_bytes: &[u8],
+) -> (Vec<u8>, Vec<u8>) {
+    // Returns (Ciphertext, Nonce)
+
     // 1. Derive Shared Key
     let key = derive_aes_key(sender_sk, receiver_pk);
     let cipher = Aes256Gcm::new(&key);
@@ -61,9 +65,9 @@ pub(crate) fn encrypt_package(
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     //println!("[Crypto] Generated Nonce: {:?}", nonce);
 
-
     // 3. Encrypt
-    let ciphertext = cipher.encrypt(&nonce, plain_bytes)
+    let ciphertext = cipher
+        .encrypt(&nonce, plain_bytes)
         .expect("Encryption failure!");
 
     //println!("[Crypto] Encrypted package ({:?} bytes)", ciphertext);
@@ -76,7 +80,7 @@ pub(crate) fn decrypt_package(
     receiver_sk: &SecretKey,
     sender_pk: &PublicKey,
     ciphertext: &[u8],
-    nonce_bytes: &[u8]
+    nonce_bytes: &[u8],
 ) -> Vec<u8> {
     // 1. Derive SAME Shared Key (ECDH is symmetric: a*B = b*A)
     let key = derive_aes_key(receiver_sk, sender_pk);
@@ -90,36 +94,37 @@ pub(crate) fn decrypt_package(
     //println!("[Crypto] Encrypted package ({:?} bytes)", ciphertext);
 
     //println!("[Crypto] Generated Nonce: {:?}", nonce);
-    cipher.decrypt(nonce, ciphertext)
+    cipher
+        .decrypt(nonce, ciphertext)
         .expect("Decryption failed! Invalid key or tampered data.")
 }
 
 /// Signs the package contents (Ciphertext + Nonce + Timestamp).
 pub(crate) fn sign_package(
-    signer_sk: &SecretKey, 
-    ciphertext: &[u8], 
+    signer_sk: &SecretKey,
+    ciphertext: &[u8],
     nonce: &[u8],
-    timestamp: u64
+    timestamp: u64,
 ) -> Signature {
     let secp = Secp256k1::new();
-    
+
     let mut buffer = Vec::new();
     buffer.extend_from_slice(ciphertext);
     buffer.extend_from_slice(nonce); // Must sign nonce too!
     buffer.extend_from_slice(&timestamp.to_be_bytes());
-    
+
     let mut hasher = Sha256::new();
     hasher.update(&buffer);
     let msg = Message::from_digest(hasher.finalize().into());
-    
+
     secp.sign_ecdsa(msg, signer_sk)
 }
 
 /// Verifies origin, integrity, and freshness.
 pub(crate) fn verify_package(
-    sender_pk: &PublicKey, 
+    sender_pk: &PublicKey,
     package: &SecurePackage,
-    max_age_seconds: u64
+    max_age_seconds: u64,
 ) -> bool {
     let secp = Secp256k1::new();
 
@@ -140,13 +145,14 @@ pub(crate) fn verify_package(
     hasher.update(&buffer);
     let msg = Message::from_digest(hasher.finalize().into());
 
-    secp.verify_ecdsa(msg, &package.signature, sender_pk).is_ok()
+    secp.verify_ecdsa(msg, &package.signature, sender_pk)
+        .is_ok()
 }
 
 pub(crate) fn verify_broadcast_package(
     sender_pk: &PublicKey,
     package: &BroadcastPackage,
-    max_age_seconds: u64
+    max_age_seconds: u64,
 ) -> bool {
     let secp = Secp256k1::new();
 
@@ -167,13 +173,14 @@ pub(crate) fn verify_broadcast_package(
     hasher.update(&buffer);
     let msg = Message::from_digest(hasher.finalize().into());
 
-    secp.verify_ecdsa(msg, &package.signature, sender_pk).is_ok()
+    secp.verify_ecdsa(msg, &package.signature, sender_pk)
+        .is_ok()
 }
 
 #[derive(Debug, Clone)]
 pub struct IdentityKeyPair {
-    sk: SecretKey,      // Private
-    pub pk: PublicKey,  // Public (Known to everyone)
+    sk: SecretKey,     // Private
+    pub pk: PublicKey, // Public (Known to everyone)
 }
 
 impl IdentityKeyPair {
@@ -198,8 +205,8 @@ impl IdentityKeyPair {
 
 #[derive(Debug, Clone)]
 pub struct TransportKeyPair {
-    sk: SecretKey,      // Private: Only accessible inside crypto.rs
-    pub pk: PublicKey,  // Public: Accessible everywhere
+    sk: SecretKey,     // Private: Only accessible inside crypto.rs
+    pub pk: PublicKey, // Public: Accessible everywhere
 }
 
 impl TransportKeyPair {
@@ -221,29 +228,11 @@ impl TransportKeyPair {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::{Secp256k1, SecretKey, PublicKey};
     use rand::rngs::OsRng;
+    use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
     #[test]
     fn test_secure_package_lifecycle() {
@@ -279,13 +268,21 @@ mod tests {
         // 6. Verify Origin & Freshness
         // Bob checks if this really came from Alice and isn't too old (e.g., 60s window)
         let is_valid = verify_package(&alice_pk, &package, 60);
-        assert!(is_valid, "Package signature or timestamp verification failed");
+        assert!(
+            is_valid,
+            "Package signature or timestamp verification failed"
+        );
 
         // 7. Decrypt (Bob uses his SK and Alice's PK)
-        let decrypted_bytes = decrypt_package(&bob_sk, &alice_pk, &package.ciphertext, &package.nonce);
+        let decrypted_bytes =
+            decrypt_package(&bob_sk, &alice_pk, &package.ciphertext, &package.nonce);
 
         // 8. Assert Success
-        assert_eq!(message.to_vec(), decrypted_bytes, "Decrypted message does not match original!");
+        assert_eq!(
+            message.to_vec(),
+            decrypted_bytes,
+            "Decrypted message does not match original!"
+        );
         println!("Crypto Lifecycle Test: SUCCESS");
     }
 
@@ -334,13 +331,12 @@ mod tests {
 
         // Attempt to decrypt tampered ciphertext
         // decrypt_package uses .expect(), so we use std::panic::catch_unwind to test for panic
-        let result = std::panic::catch_unwind(|| {
-            decrypt_package(&bob_sk, &alice_pk, &ciphertext, &nonce)
-        });
+        let result =
+            std::panic::catch_unwind(|| decrypt_package(&bob_sk, &alice_pk, &ciphertext, &nonce));
 
-        assert!(result.is_err(), "Decryption should panic/fail on tampered ciphertext!");
+        assert!(
+            result.is_err(),
+            "Decryption should panic/fail on tampered ciphertext!"
+        );
     }
 }
-
-
-

@@ -1,8 +1,8 @@
-use taps::protocol::taps::*;
 use crate::crypto::*;
-use secp256k1::{PublicKey};
-use serde::{Serialize, Deserialize};
 use bincode;
+use secp256k1::PublicKey;
+use serde::{Deserialize, Serialize};
+use taps::protocol::taps::*;
 
 pub struct KeyPairs {
     pub signers_keys: Vec<KeyPair>,
@@ -38,17 +38,12 @@ impl KeyPairs {
     }
 
     pub fn set_quorum(&self, t: usize) -> Quorum {
-        Quorum::choose(
-            self.signers_keys.len(),
-            t,
-            &self.signers_keys
-        )
+        Quorum::choose(self.signers_keys.len(), t, &self.signers_keys)
     }
 
     pub fn set_tracing_keys(&self) -> TracingKeys {
         TracingKeys::set(&self.tracing_keys)
     }
-    
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,9 +55,7 @@ impl SignerPackage {
     pub fn new(auth_keys: &KeyPairs, index: usize) -> Self {
         let my_kp = auth_keys.signers_keys[index].clone();
 
-        SignerPackage {
-            my_kp,
-        }
+        SignerPackage { my_kp }
     }
 }
 
@@ -77,7 +70,7 @@ pub struct CombinerPackage {
 }
 
 impl CombinerPackage {
-    pub fn new(auth_keys: &KeyPairs, quo: Quorum, n:usize, t:usize) -> Self {
+    pub fn new(auth_keys: &KeyPairs, quo: Quorum, n: usize, t: usize) -> Self {
         CombinerPackage {
             kp_cs: auth_keys.combiner_keys.clone(),
             pk: auth_keys.set_pk(),
@@ -122,14 +115,8 @@ impl Authority {
     }
 
     /// Helper: Serializes, Encrypts (Transport), and Signs (Identity).
-    fn secure_package<T: Serialize>(
-        &self,
-        package: &T,
-        receiver_pk: &PublicKey
-    ) -> SecurePackage {
-
-        let plain_bytes = bincode::serialize(package)
-            .expect("Failed to serialize package");
+    fn secure_package<T: Serialize>(&self, package: &T, receiver_pk: &PublicKey) -> SecurePackage {
+        let plain_bytes = bincode::serialize(package).expect("Failed to serialize package");
 
         // Encrypt with Ephemeral Key
         let (ciphertext, nonce) = self.transport_kp.encrypt_to(receiver_pk, &plain_bytes);
@@ -137,11 +124,7 @@ impl Authority {
         let timestamp = current_timestamp();
 
         // Sign with Identity Key
-        let signature = self.identity_kp.sign_data(
-            &ciphertext,
-            &nonce,
-            timestamp
-        );
+        let signature = self.identity_kp.sign_data(&ciphertext, &nonce, timestamp);
 
         SecurePackage {
             ciphertext,
@@ -163,7 +146,7 @@ impl Authority {
         quorum: Quorum,
         n: usize,
         t: usize,
-        receiver_pk: &PublicKey
+        receiver_pk: &PublicKey,
     ) -> SecurePackage {
         // Pass the chosen quorum into the package
         let pkg = CombinerPackage::new(&self.keys, quorum, n, t);
@@ -177,16 +160,6 @@ impl Authority {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,12 +172,10 @@ mod tests {
         // Check key counts
         assert_eq!(auth.signers_keys.len(), n);
         assert_eq!(auth.tracing_keys.len(), n);
-        
+
         // Check structural integrity (keys are valid)
         // (Just checking if they exist is enough, KeyPair::create guarantees validity)
         assert_eq!(auth.signers_keys.len(), n);
         assert_eq!(auth.tracing_keys.len(), n);
     }
-
-
 }

@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use crate::crypto::{BroadcastPackage, SecurePackage};
+use serde::{Deserialize, Serialize};
 use std::error::Error;
-use crate::crypto::{SecurePackage, BroadcastPackage};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 /// The roles an actor can play in the system.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
@@ -17,21 +17,21 @@ pub enum Role {
 pub enum Message {
     /// Sent by Actor -> Authority to join the network.
     Hello {
-        id: usize,       // 0..n for Signers, 0 for others
+        id: usize, // 0..n for Signers, 0 for others
         role: Role,
-        pk: Vec<u8>      // Transport Public Key (serialized)
+        pk: Vec<u8>, // Transport Public Key (serialized)
     },
 
     Secure {
         pk: Vec<u8>,
         identity_pk: Vec<u8>,
-        package: SecurePackage
+        package: SecurePackage,
     },
 
     Broadcast {
         identity_pk: Vec<u8>,
-        package: BroadcastPackage
-    }
+        package: BroadcastPackage,
+    },
 }
 
 /// Helper: Send a message with a 4-byte length header.
@@ -40,7 +40,7 @@ pub async fn send(stream: &mut TcpStream, msg: &Message) -> Result<(), Box<dyn E
     let len = bytes.len() as u32;
 
     stream.write_all(&len.to_be_bytes()).await?; // 1. Write Length
-    stream.write_all(&bytes).await?;             // 2. Write Payload
+    stream.write_all(&bytes).await?; // 2. Write Payload
     stream.flush().await?;
     Ok(())
 }

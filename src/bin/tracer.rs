@@ -1,11 +1,11 @@
 //use tokio::net::TcpListener;
-use std::error::Error;
-use simulation_taps::{
-    tracer::{Tracer},
-    network::{self, Message, Role}
-};
-use tokio::net::TcpStream;
 use secp256k1::PublicKey;
+use simulation_taps::{
+    network::{self, Message, Role},
+    tracer::Tracer,
+};
+use std::error::Error;
+use tokio::net::TcpStream;
 
 // Network Constants
 const AUTHORITY_ADDR: &str = "127.0.0.1:8080";
@@ -13,7 +13,7 @@ const COMBINER_ADDR: &str = "127.0.0.1:8081";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-println!("[Combiner] Starting TAPS Combiner Node...");
+    println!("[Combiner] Starting TAPS Combiner Node...");
 
     // =========================================================================
     // Phase 1: Bootstrap from Authority
@@ -38,14 +38,18 @@ println!("[Combiner] Starting TAPS Combiner Node...");
     // 4. Receive Welcome Package
     let msg = network::receive(&mut auth_stream).await?;
     match msg {
-        Message::Secure { pk, identity_pk, package } => {
+        Message::Secure {
+            pk,
+            identity_pk,
+            package,
+        } => {
             println!("[Tracer] Received SecurePackage from Authority. Bootstrapping...");
             let pubkey = PublicKey::from_slice(&pk)?;
             let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
             tracer.load_from_authority(&package, &pubkey, &identity_pubkey)?;
-        },
+        }
         _ => return Err("Unexpected message from Authority".into()),
-    } 
+    }
 
     // =========================================================================
     // Phase 2: Combiner Interaction
@@ -67,20 +71,22 @@ println!("[Combiner] Starting TAPS Combiner Node...");
     let msg = network::receive(&mut combiner_stream).await?;
 
     match msg {
-        Message::Broadcast {identity_pk, package: signed_pkg } => {
+        Message::Broadcast {
+            identity_pk,
+            package: signed_pkg,
+        } => {
             // 1. Verify Combiner's Signature
             // We use the same 'combiner_pk' we trusted from the Handsh
             let identity_pk = PublicKey::from_slice(&identity_pk)?;
             tracer.load_from_combiner(&signed_pkg, &identity_pk)?;
-        },
+        }
         _ => return Err("Expected TracerPackage from Combiner".into()),
     }
-
 
     tracer.verify_sigma()?;
     tracer.verify_proof()?;
     tracer.verify_sign();
-    
+
     println!("[Tracer] Protocol Finished Successfully.");
 
     Ok(())

@@ -1,9 +1,9 @@
-use taps::protocol::taps::*;
-use crate::crypto::*;
-use secp256k1::{PublicKey, Scalar, Error};
-use serde::{Serialize, Deserialize};
-use bincode;
 use crate::authority::SignerPackage;
+use crate::crypto::*;
+use bincode;
+use secp256k1::{Error, PublicKey, Scalar};
+use serde::{Deserialize, Serialize};
+use taps::protocol::taps::*;
 
 // --- Payload Structs (What we send over the wire) ---
 
@@ -25,7 +25,7 @@ pub struct Signer {
     pub id: usize,
 
     // 1. Networking Keys
-    pub identity_kp: IdentityKeyPair,   // Long-term Identity (Signing)
+    pub identity_kp: IdentityKeyPair, // Long-term Identity (Signing)
     pub transport_kp: TransportKeyPair, // Ephemeral Transport (Encryption)
 
     // 2. TAPS Protocol Keys
@@ -53,11 +53,7 @@ impl Signer {
 
     // --- Secure Package Helper ---
     // (Reused from previous step)
-    fn secure_package<T: Serialize>(
-        &self,
-        package: &T,
-        receiver_pk: &PublicKey
-    ) -> SecurePackage {
+    fn secure_package<T: Serialize>(&self, package: &T, receiver_pk: &PublicKey) -> SecurePackage {
         let plain_bytes = bincode::serialize(package).expect("Serialization failed");
         let (ciphertext, nonce) = self.transport_kp.encrypt_to(receiver_pk, &plain_bytes);
         let timestamp = current_timestamp();
@@ -75,15 +71,16 @@ impl Signer {
         &mut self,
         secure_pkg: &SecurePackage,
         authority_pk: &PublicKey,
-        identity_pk: &PublicKey
+        identity_pk: &PublicKey,
     ) -> Result<(), Error> {
-
         // 1. VERIFY Signature & Timestamp
         // Use the wrapper method in IdentityKeyPair
         let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
-            eprintln!("[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired).");
+            eprintln!(
+                "[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired)."
+            );
             return Err(Error::InvalidSignature);
         }
 
@@ -91,14 +88,14 @@ impl Signer {
         // Use the wrapper method in TransportKeyPair
         // This handles deriving the AES key and decrypting with the nonce
         let plaintext_bytes = self.transport_kp.decrypt_from(
-            authority_pk,          // Sender PK (Authority)
+            authority_pk, // Sender PK (Authority)
             &secure_pkg.ciphertext,
-            &secure_pkg.nonce
+            &secure_pkg.nonce,
         );
 
         // 3. DESERIALIZE Configuration
-        let config: SignerPackage = bincode::deserialize(&plaintext_bytes)
-            .map_err(|_| Error::InvalidMessage)?;
+        let config: SignerPackage =
+            bincode::deserialize(&plaintext_bytes).map_err(|_| Error::InvalidMessage)?;
 
         // 4. LOAD State
         println!("[Signer] Bootstrap successful. Loading configuration...");
@@ -121,9 +118,7 @@ impl Signer {
         self.current_commitment = Some(commit);
 
         // 4. Create Package with only public info
-        let pkg = CommitmentPackage {
-            commitment: comm,
-        };
+        let pkg = CommitmentPackage { commitment: comm };
 
         // 5. Encrypt & Sign
         self.secure_package(&pkg, combiner_pk)
@@ -132,10 +127,14 @@ impl Signer {
     // --- Protocol Step 2: Send Sigma (Partial Signature) ---
     pub fn set_sigma(&mut self, challenge: &Scalar, combiner_pk: &PublicKey) -> SecurePackage {
         // 1. Retrieve State
-        let comm = self.current_commitment.as_ref()
+        let comm = self
+            .current_commitment
+            .as_ref()
             .expect("Protocol Error: No commitment found for this round!");
 
-        let my_key = self.taps_kp.as_ref()
+        let my_key = self
+            .taps_kp
+            .as_ref()
             .expect("Protocol Error: TAPS keys not initialized");
 
         // 2. Compute Signature using TAPS logic (z = r + c * sk)
@@ -143,9 +142,7 @@ impl Signer {
         let signature = Sign::sign(comm, my_key, challenge);
 
         // 3. Create Package
-        let pkg = SigmaPackage {
-            z: signature,
-        };
+        let pkg = SigmaPackage { z: signature };
 
         // 4. Encrypt & Sign
         self.secure_package(&pkg, combiner_pk)
