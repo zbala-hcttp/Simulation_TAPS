@@ -198,8 +198,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     combiner.compute_encrypted_signature(&taps_kp)?;
 
     // 3. Generate ZKP Components
-    combiner.compute_encrypted_bits()?;
     combiner.compute_phis()?;
+    combiner.compute_encrypted_bits()?;
     combiner.compute_blinds(n_signers)?; // n_signers is just a usize
     combiner.compute_proofs()?;
     combiner.compute_hats()?;

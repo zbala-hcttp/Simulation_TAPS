@@ -17,6 +17,7 @@ mod serde_scalar {
     where
         S: Serializer,
     {
+        // Writes: [Length (8 bytes)] + [Data (32 bytes)]
         serializer.serialize_bytes(&scalar.to_be_bytes())
     }
 
@@ -25,8 +26,19 @@ mod serde_scalar {
     where
         D: Deserializer<'de>,
     {
-        // We expect 32 bytes
-        let bytes: [u8; 32] = Deserialize::deserialize(deserializer)?;
+        // FIX: Deserialize as Vec<u8> to consume the length prefix!
+        let vec: Vec<u8> = Deserialize::deserialize(deserializer)?;
+
+        if vec.len() != 32 {
+            return Err(serde::de::Error::custom(format!(
+                "Scalar expected 32 bytes, got {}",
+                vec.len()
+            )));
+        }
+
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&vec);
+
         Scalar::from_be_bytes(bytes).map_err(serde::de::Error::custom)
     }
 }
@@ -606,6 +618,7 @@ impl Combiner {
     pub fn sign_package<T: Serialize>(&self, payload: &T) -> BroadcastPackage {
         // 1. Serialize the Payload (e.g., using bincode)
         let text = bincode::serialize(payload).expect("Failed to serialize package");
+        //println!("[Debug] Sender Payload Size: {:?} bytes", text);
 
         // 2. Generate Metadata
         // Nonce: 12 random bytes
@@ -653,13 +666,13 @@ impl Combiner {
 
         let payload = TracerPackage {
             T: T.clone(),
-            v0: v0,
-            v_vec: v,
+            v0: v0.clone(),
+            v_vec: v.clone(),
             proof: proof_struct.clone(),
             sigma: sigma.clone(), // Passed in from construct_sigma
-            c: *c,
-            alpha: *alpha,
-            m: m.to_vec(),
+            c: c.clone(),
+            alpha: alpha.clone(),
+            m: m.to_vec().clone(),
         };
 
         self.sign_package(&payload)

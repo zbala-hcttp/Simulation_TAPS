@@ -1,4 +1,4 @@
-use crate::{authority::TracerPackage, combiner, crypto::*};
+use crate::{authority, combiner, crypto::*};
 use secp256k1::{Error, PublicKey, Scalar};
 use taps::protocol::taps::*;
 //use serde::{Serialize, Deserialize};
@@ -73,7 +73,7 @@ impl Tracer {
             &secure_pkg.nonce,
         );
 
-        let config: TracerPackage =
+        let config: authority::TracerPackage =
             bincode::deserialize(&plaintext_bytes).map_err(|_| Error::InvalidMessage)?;
 
         self.taps_kp = Some(config.kp_t);
@@ -96,9 +96,18 @@ impl Tracer {
             return Err(Error::InvalidSignature);
         }
 
+        //println!("[Debug] Receiver Input Size: {:?} bytes", broadcast_pkg.text);
         // 2. Deserialize
-        let config: combiner::TracerPackage =
-            bincode::deserialize(&broadcast_pkg.text).map_err(|_| Error::InvalidMessage)?;
+        /*let config: combiner::TracerPackage =
+            bincode::deserialize(&broadcast_pkg.text).map_err(|_| Error::InvalidMessage)?;*/
+        let config: combiner::TracerPackage = match bincode::deserialize(&broadcast_pkg.text) {
+            Ok(c) => c,
+            Err(e) => {
+                // PRINT THE ERROR
+                eprintln!("[Tracer] Bincode Error: {:?}", e);
+                return Err(Error::InvalidMessage);
+            }
+        };
 
         // 3. Load State
         // Assuming config.T is the ElGamalCiphertext

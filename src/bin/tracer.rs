@@ -13,7 +13,7 @@ const COMBINER_ADDR: &str = "127.0.0.1:8081";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("[Combiner] Starting TAPS Combiner Node...");
+    println!("[Tracer] Starting TAPS Tracer Node...");
 
     // =========================================================================
     // Phase 1: Bootstrap from Authority
