@@ -137,14 +137,8 @@ impl Tracer {
         let v0 = self.v0.as_ref().expect("v0 not set in Tracer");
         let v = self.v_vec.as_ref().expect("v_vec not set in Tracer");
         let pk = self.pk.as_ref().expect("PK not set in Tracer");
-        let tracing_kps = self
-            .tracing_kps
-            .as_ref()
-            .expect("Tracing keys not set in Tracer");
-        let kp_t = self
-            .taps_kp
-            .as_ref()
-            .expect("TAPS keypair not set in Tracer");
+        let tracing_kps = self.tracing_kps.as_ref().expect("Tracing keys not set in Tracer");
+        let kp_t = self.taps_kp.as_ref().expect("TAPS keypair not set in Tracer");
         let c = self.c.as_ref().expect("C not set in Tracer");
         let alpha = self.alpha.as_ref().expect("Alpha not set in Tracer");
         Proofs::verify(
@@ -164,10 +158,7 @@ impl Tracer {
 
     pub fn verify_sign(&mut self) {
         let sigma = self.sigma.as_ref().expect("Sigma not set in Tracer");
-        let kp = self
-            .taps_kp
-            .as_ref()
-            .expect("TAPS keypair not set in Tracer");
+        let kp = self.taps_kp.as_ref().expect("TAPS keypair not set in Tracer");
         let ct = sigma.ct.clone();
         let g_z_prime = ElGamalCiphertext::decrypt(&ct, &kp);
 
@@ -175,10 +166,7 @@ impl Tracer {
         let c = self.c.as_ref().expect("C not set in Tracer");
         let v0 = self.v0.as_ref().expect("v0 not set in Tracer");
         let v = self.v_vec.as_ref().expect("v_vec not set in Tracer");
-        let tr_keys = self
-            .tracing_kps
-            .as_ref()
-            .expect("Tracing keys not set in Tracer");
+        let tr_keys = self.tracing_kps.as_ref().expect("Tracing keys not set in Tracer");
         let b_i = decrypt_bits(&v0, &v, &tr_keys).expect("Failed to decrypt bits!");
         //println!("b_i: {:?}", b_i);
         let pk = self.pk.as_ref().expect("PK not set in Tracer");

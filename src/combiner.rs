@@ -296,6 +296,9 @@ impl Combiner {
             Scalar::from_be_bytes(bytes).expect("Threshold scalar conversion failed")
         };
 
+        println!("t: {}", t_val);
+        println!("t_scalar: {:?}", t_scalar);
+
         // Encrypt using psi
         let T_cipher = ElGamalCiphertext::encrypt_value(&psi_secret, &t_scalar);
 
@@ -408,12 +411,14 @@ impl Combiner {
 
     // --- Protocol Step: Encrypt Signature (C) ---
 
-    pub fn compute_encrypted_signature(&mut self, kp_t: &KeyPair) -> Result<(), Error> {
+    pub fn compute_encrypted_signature(&mut self) -> Result<(), Error> {
         // Get the aggregated signature 'z' we computed earlier
         let z_struct = self
             .w_z
             .as_ref()
             .expect("w_z (Aggregated Signature) not computed yet");
+
+        let pk = self.pk.as_ref().expect("PK not set in Tracer");
 
         // 2. Generate Randomness (rho)
         // This is the "secret" we create here to encrypt z.
@@ -422,7 +427,7 @@ impl Combiner {
         // 3. Encrypt z -> C
         // We use the specific syntax you requested: ElGamalEncrypt::encrypt
         // Arguments: (randomness, message, key)
-        let c_cipher = ElGamalCiphertext::encrypt(&rho_secret, z_struct, kp_t);
+        let c_cipher = ElGamalCiphertext::encrypt(&rho_secret, &z_struct, &pk);
 
         // 4. Store State
         self.w_rho = Some(rho_secret); // Store the randomness rho
@@ -508,10 +513,7 @@ impl Combiner {
         let blinds = self.blinds.as_ref().expect("Blinds not computed");
         let pk = self.pk.as_ref().expect("PK not set");
         let tks = self.tks.as_ref().expect("Tracing Keys not set");
-        let v_vec = self
-            .v_vec
-            .as_ref()
-            .expect("Encrypted Bits (v_vec) not computed");
+        let v_vec = self.v_vec.as_ref().expect("Encrypted Bits (v_vec) not computed");
         let c = self.c.as_ref().expect("Challenge c not set");
         let alpha = self.alpha.as_ref().expect("Alpha not set");
 

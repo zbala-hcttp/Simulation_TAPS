@@ -191,11 +191,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     combiner.compute_aggregated_sign()?;
 
     // 2. Encrypt z -> C
-    // We need to clone the key so we aren't borrowing 'combiner' inside the function call arguments
-    let taps_kp = combiner.taps_kp.clone().ok_or("TAPS KP missing")?;
-
-    // Now call mutable method with the cloned key
-    combiner.compute_encrypted_signature(&taps_kp)?;
+    combiner.compute_encrypted_signature()?;
 
     // 3. Generate ZKP Components
     combiner.compute_phis()?;
