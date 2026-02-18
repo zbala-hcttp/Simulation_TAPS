@@ -3,29 +3,35 @@ use simulation_taps::{
     authority::Authority,
     network::{self, Message, Role},
 };
+use std::env;
 use std::error::Error;
 use tokio::net::{TcpListener, TcpStream};
 
-const N_SIGNERS: usize = 3; // Let's start with 3 signers for simplicity
 const PORT: &str = "127.0.0.1:8080";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+
+    let args: Vec<String> = env::args().collect();
+    let n = args.get(1).unwrap_or(&"6".to_string()).parse::<usize>().unwrap();
+    let t = args.get(2).unwrap_or(&"4".to_string()).parse::<usize>().unwrap();
+
+    println!("[Authority] Starting with N={} T={}...", n, t);
     println!("[Authority] Starting TAPS Setup Server on {}...", PORT);
 
     // 1. Initialize Cryptographic Authority
-    let auth = Authority::new(N_SIGNERS);
+    let auth = Authority::new(n);
     println!("[Authority] Generated Master Keys.");
 
     // 2. Start TCP Listener
     let listener = TcpListener::bind(PORT).await?;
 
     // We need to collect streams for: Signers (0..N), Combiner, Tracer
-    let mut signers: Vec<Option<(TcpStream, PublicKey)>> = (0..N_SIGNERS).map(|_| None).collect();
+    let mut signers: Vec<Option<(TcpStream, PublicKey)>> = (0..n).map(|_| None).collect();
     let mut combiner = None;
     let mut tracer = None;
 
-    let expected_connections = N_SIGNERS + 2;
+    let expected_connections = n + 2;
     let mut connected_count = 0;
 
     println!(
@@ -47,7 +53,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 match role {
                     Role::Signer => {
-                        if id < N_SIGNERS {
+                        if id < n {
                             println!("[Authority] Signer #{} Handshake Verified.", id);
                             signers[id] = Some((socket, pubkey));
                             connected_count += 1;
@@ -97,8 +103,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // B. Send to Combiner (Requires Quorum)
     if let Some((stream, pk)) = combiner.as_mut() {
-        let quorum = auth.keys.set_quorum(2); // Threshold t=2
-        let pkg = auth.prepare_combiner_package(quorum, N_SIGNERS, 2, pk);
+        let quorum = auth.keys.set_quorum(t); // Threshold t=2
+        let pkg = auth.prepare_combiner_package(quorum, n, t, pk);
         network::send(
             stream,
             &Message::Secure {

@@ -20,6 +20,10 @@ path = "src/bin/combiner.rs"
 name = "tracer"
 path = "src/bin/tracer.rs"
 
+[[bin]]
+name = "benchmark"
+path = "src/bin/benchmark.rs"
+
 [dependencies]
 taps = { path = "../TAPS" }
 secp256k1 = { version = "0.31.1", features = ["rand", "global-context", "serde"] }
