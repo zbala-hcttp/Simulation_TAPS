@@ -1,11 +1,11 @@
 use secp256k1::PublicKey;
 use simulation_taps::{
-    crypto::IdentityKeyPair,
     network::{self, Message, Role},
     signer::Signer,
 };
 use std::env;
 use std::error::Error;
+use std::time::Instant;
 use tokio::net::TcpStream;
 
 // Network Constants
@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let my_id: usize = args[1].parse()?;
 
     println!("[Signer #{}] Starting Node...", my_id);
-
+    let start_setup = Instant::now();
     // =========================================================================
     // Phase 1: Bootstrap from Authority
     // =========================================================================
@@ -112,13 +112,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "[Signer #{}] Handshake Complete. Combiner Key Verified.",
         my_id
     );
+    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     // --- Round 1: Send Commitment ---
 
     println!("[Signer #{}] >> Round 1: Sending Commitment...", my_id);
 
     // Encrypt the commitment using the Combiner's Key we just received
+
+    let start_set_commitment = Instant::now();
     let comm_package = signer.set_commitment(&combiner_pk);
+    let duration_set_commitment = start_set_commitment.elapsed();
+    println!("BENCH,Commitment,{}", duration_set_commitment.as_micros());
 
     let msg_comm = Message::Secure {
         pk: my_transport_pk.serialize().to_vec(), // Send our PK so Combiner knows who encrypted it
@@ -144,19 +149,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // 1. Verify Combiner's Signature
             // We use the same 'combiner_pk' we trusted from the Handsh
             let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
-            if !IdentityKeyPair::verify_broadcast_data(&identity_pubkey, &signed_pkg) {
-                return Err("Security Alert: Invalid Signature on Challenge!".into());
-            }
-
-            // 2. Deserialize Challenge
-            let payload: simulation_taps::combiner::SignerPackage =
-                bincode::deserialize(&signed_pkg.text)?;
             println!("[Signer #{}] Received Challenge.", my_id);
 
             // 3. Compute Share (z_i)
             // We use the 'c' from the payload.
             // We encrypt the result for the Combiner using 'combiner_pk'.
-            let sigma_pkg = signer.set_sigma(&payload.c, &combiner_pk);
+            let start_set_sigma = Instant::now();
+            let sigma_pkg = signer.set_sigma(&signed_pkg, &combiner_pk, &identity_pubkey)
+                .expect("Could not prepare package");
+            let duration_set_sigma = start_set_sigma.elapsed();
+            println!("BENCH,Sigma,{}", duration_set_sigma.as_micros());
 
             // 4. Send Share
             let msg_share = Message::Secure {

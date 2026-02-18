@@ -278,11 +278,8 @@ impl Combiner {
     }
 
     // --- Protocol Step: Compute Challenge & Parameters (Phase 1) ---
+    pub fn encrypt_threshold(&mut self) -> Result<(), Error> {
 
-    pub fn compute_parameters(&mut self, message: &[u8]) -> Result<(), Error> {
-        // Returns unit
-
-        let pk = self.pk.as_ref().expect("PK not set");
         let t_val = self.t.expect("Threshold t not set");
 
         // 1. Generate Witness: psi (Secret Randomness for Threshold)
@@ -296,11 +293,21 @@ impl Combiner {
             Scalar::from_be_bytes(bytes).expect("Threshold scalar conversion failed")
         };
 
-        println!("t: {}", t_val);
-        println!("t_scalar: {:?}", t_scalar);
-
         // Encrypt using psi
         let T_cipher = ElGamalCiphertext::encrypt_value(&psi_secret, &t_scalar);
+
+        // 4. Store State
+        self.w_psi = Some(psi_secret);
+        self.T = Some(T_cipher);
+
+        Ok(())
+    }
+
+    pub fn compute_parameters(&mut self, message: &[u8]) -> Result<(), Error> {
+        // Returns unit
+
+        let pk = self.pk.as_ref().expect("PK not set");
+        let T_cipher = self.T.as_ref().expect("Cipher not set");
 
         let R = self
             .R
@@ -308,10 +315,6 @@ impl Combiner {
             .expect("Aggregated Nonce R not computed yet");
         // 3. Compute Protocol Parameters (c, alpha, beta)
         let (c, alpha, beta) = get_parameters(pk, &T_cipher, R, message);
-
-        // 4. Store State
-        self.w_psi = Some(psi_secret);
-        self.T = Some(T_cipher);
 
         // Store Protocol Parameters internally
         self.c = Some(c);
@@ -413,9 +416,7 @@ impl Combiner {
 
     pub fn compute_encrypted_signature(&mut self) -> Result<(), Error> {
         // Get the aggregated signature 'z' we computed earlier
-        let z_struct = self
-            .w_z
-            .as_ref()
+        let z_struct = self.w_z.as_ref()
             .expect("w_z (Aggregated Signature) not computed yet");
 
         let pk = self.pk.as_ref().expect("PK not set in Tracer");
@@ -467,9 +468,7 @@ impl Combiner {
 
     pub fn compute_encrypted_bits(&mut self) -> Result<(), Error> {
         // 1. Retrieve Context
-        let gamma_secret = self
-            .w_gamma
-            .as_ref()
+        let gamma_secret = self.w_gamma.as_ref()
             .expect("w_gamma (Secret Gamma) not computed yet");
         let quorum = self.quorum.as_ref().expect("Quorum not set");
         let tks = self.tks.as_ref().expect("Tracing Keys not set");

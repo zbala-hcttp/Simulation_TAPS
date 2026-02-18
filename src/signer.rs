@@ -1,4 +1,5 @@
 use crate::authority::SignerPackage;
+use crate::combiner;
 use crate::crypto::*;
 use bincode;
 use secp256k1::{Error, PublicKey, Scalar};
@@ -125,26 +126,35 @@ impl Signer {
     }
 
     // --- Protocol Step 2: Send Sigma (Partial Signature) ---
-    pub fn set_sigma(&mut self, challenge: &Scalar, combiner_pk: &PublicKey) -> SecurePackage {
+    pub fn set_sigma(&mut self, signed_pkg: &BroadcastPackage, combiner_pk: &PublicKey, identity_pk: &PublicKey) -> Result<SecurePackage, Error> {
+
+        let is_valid = IdentityKeyPair::verify_broadcast_data(&identity_pk, &signed_pkg);
+
+
+        if !is_valid {
+            eprintln!(
+                "[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired)."
+            );
+            return Err(Error::InvalidSignature);
+        }
+
+        // 2. Deserialize Challenge
+        let payload: combiner::SignerPackage = bincode::deserialize(&signed_pkg.text).expect("Serialization failed");
         // 1. Retrieve State
-        let comm = self
-            .current_commitment
-            .as_ref()
+        let comm = self.current_commitment.as_ref()
             .expect("Protocol Error: No commitment found for this round!");
 
-        let my_key = self
-            .taps_kp
-            .as_ref()
+        let my_key = self.taps_kp.as_ref()
             .expect("Protocol Error: TAPS keys not initialized");
 
         // 2. Compute Signature using TAPS logic (z = r + c * sk)
         // This uses the specific implementation you provided
-        let signature = Sign::sign(comm, my_key, challenge);
+        let signature = Sign::sign(&comm, &my_key, &payload.c);
 
         // 3. Create Package
         let pkg = SigmaPackage { z: signature };
 
         // 4. Encrypt & Sign
-        self.secure_package(&pkg, combiner_pk)
+        Ok(self.secure_package(&pkg, combiner_pk))
     }
 }

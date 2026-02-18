@@ -5,6 +5,7 @@ use simulation_taps::{
     tracer::Tracer,
 };
 use std::error::Error;
+use std::time::Instant;
 use tokio::net::TcpStream;
 
 // Network Constants
@@ -19,6 +20,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Phase 1: Bootstrap from Authority
     // =========================================================================
 
+    let start_setup = Instant::now();
     // 1. Connect to Authority
     println!("[Tracer] Connecting to Authority at {}...", AUTHORITY_ADDR);
     let mut auth_stream = TcpStream::connect(AUTHORITY_ADDR).await?;
@@ -82,10 +84,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => return Err("Expected TracerPackage from Combiner".into()),
     }
+    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
+    let start_verify_sigma = Instant::now();
     tracer.verify_sigma()?;
+    let duration = start_verify_sigma.elapsed();
+    println!("BENCH,VerifySigma,{}", duration.as_micros());
+
+    let start_verify_proof = Instant::now();
     tracer.verify_proof()?;
+    let duration_verify_proof = start_verify_sigma.elapsed();
+    println!("BENCH,VerifyProof,{}", duration.as_micros());
+
+    let start_verify_sign = Instant::now();
     tracer.verify_sign();
+    let duration_verify_sign = start_verify_sign.elapsed();
+    println!("BENCH,VerifySign,{}", duration.as_micros());
 
     println!("[Tracer] Protocol Finished Successfully.");
 
