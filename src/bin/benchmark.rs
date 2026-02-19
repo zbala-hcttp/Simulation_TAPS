@@ -15,15 +15,34 @@ fn main() {
         (50, 26),
     ];
 
+
     // 2. Prepare Results File
-    let mut file = OpenOptions::new()
+    let mut file_s = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open("benchmark_results.csv")
+        .open("benchmark_results_signers.csv")
         .expect("Cannot open file");
 
-    writeln!(file, "N,T,Phase,Time_Microseconds").unwrap();
+    // 2. Prepare Results File
+    let mut file_c = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("benchmark_results_combiner.csv")
+        .expect("Cannot open file");
+
+    // 2. Prepare Results File
+    let mut file_t = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("benchmark_results_tracer.csv")
+        .expect("Cannot open file");
+
+    writeln!(file_s, "N,T,Phase,Time_Microseconds").unwrap();
+    writeln!(file_c, "N,T,Phase,Time_Microseconds").unwrap();
+    writeln!(file_t, "N,T,Phase,Time_Microseconds").unwrap();
 
     println!("==================================================");
     println!("   STARTING TAPS BENCHMARK SUITE");
@@ -37,14 +56,14 @@ fn main() {
 
     // 4. Run Loop
     for (n, t) in scenarios {
-        run_scenario(n, t, &mut file);
+        run_scenario(n, t, &mut file_s, &mut file_c, &mut file_t);
 
         // Cool-down period to let OS reclaim ports (TIME_WAIT state)
         thread::sleep(Duration::from_secs(5));
     }
 }
 
-fn run_scenario(n: usize, t: usize, file: &mut std::fs::File) {
+fn run_scenario(n: usize, t: usize, file_s: &mut std::fs::File, file_c: &mut std::fs::File, file_t: &mut std::fs::File) {
     println!("\n>>> Running Scenario: N={} T={} <<<", n, t);
 
     let release_path = "target/release";
@@ -73,29 +92,29 @@ fn run_scenario(n: usize, t: usize, file: &mut std::fs::File) {
 
     // C. Start Tracer
     let _tracer = Command::new(format!("{}/tracer{}", release_path, ext))
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .spawn()
         .expect("Failed to start Tracer");
-    children.push(_tracer);
 
+    let mut signer_handles = Vec::new();
     // D. Start N Signers
     for i in 0..n {
         let _s = Command::new(format!("{}/signer{}", release_path, ext))
             .arg(i.to_string())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .spawn()
             .expect("Failed to start signer");
-        children.push(_s);
+        signer_handles.push(_s);
         thread::sleep(Duration::from_millis(10)); // Slight stagger
     }
 
     // E. Read Combiner Output & Wait
     // This blocks until Combiner finishes
-    let output = combiner.wait_with_output().expect("Combiner failed");
+    let output_c = combiner.wait_with_output().expect("Combiner failed");
 
     // F. Parse Output and Save to CSV
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    for line in stdout_str.lines() {
+    let stdout_str_c = String::from_utf8_lossy(&output_c.stdout);
+    for line in stdout_str_c.lines() {
         if line.starts_with("BENCH") {
             // Log format: BENCH,PhaseName,Microseconds
             // Output format: N,T,PhaseName,Microseconds
@@ -103,8 +122,41 @@ fn run_scenario(n: usize, t: usize, file: &mut std::fs::File) {
             if parts.len() >= 3 {
                 let phase = parts[1];
                 let time = parts[2];
-                writeln!(file, "{},{},{},{}", n, t, phase, time).unwrap();
-                println!("   [Result] {}: {} µs", phase, time);
+                writeln!(file_c, "{},{},{},{}", n, t, phase, time).unwrap();
+                println!("   [Combiner] {}: {} µs", phase, time);
+            }
+        }
+    }
+
+    for _s in signer_handles {
+        let output_s = _s.wait_with_output().expect("Failed to wait on signer");
+        let stdout_str_s = String::from_utf8_lossy(&output_s.stdout);
+        for line in stdout_str_s.lines() {
+            if line.starts_with("BENCH") {
+                let parts: Vec<&str> = line.split(',').collect();
+                if parts.len() >= 3 {
+                    writeln!(file_s, "{},{},{},{}", n, t, parts[1], parts[2]).unwrap();
+                    println!("   [Signer] {}: {} µs", parts[1], parts[2]);
+                }
+            }
+        }
+    }
+
+
+    let output_t = _tracer.wait_with_output().expect("Combiner failed");
+
+    // F. Parse Output and Save to CSV
+    let stdout_str_t = String::from_utf8_lossy(&output_t.stdout);
+    for line in stdout_str_t.lines() {
+        if line.starts_with("BENCH") {
+            // Log format: BENCH,PhaseName,Microseconds
+            // Output format: N,T,PhaseName,Microseconds
+            let parts: Vec<&str> = line.split(',').collect();
+            if parts.len() >= 3 {
+                let phase = parts[1];
+                let time = parts[2];
+                writeln!(file_t, "{},{},{},{}", n, t, phase, time).unwrap();
+                println!("   [Tracer] {}: {} µs", phase, time);
             }
         }
     }
