@@ -40,7 +40,7 @@ fn main() {
         .open("benchmark_results_tracer.csv")
         .expect("Cannot open file");
 
-    writeln!(file_s, "N,T,Phase,Time_Microseconds").unwrap();
+    writeln!(file_s, "N,T,Signer_ID,Phase,Time_Microseconds").unwrap();
     writeln!(file_c, "N,T,Phase,Time_Microseconds").unwrap();
     writeln!(file_t, "N,T,Phase,Time_Microseconds").unwrap();
 
@@ -128,14 +128,14 @@ fn run_scenario(n: usize, t: usize, file_s: &mut std::fs::File, file_c: &mut std
         }
     }
 
-    for _s in signer_handles {
+    for (i, _s) in signer_handles.into_iter().enumerate() {
         let output_s = _s.wait_with_output().expect("Failed to wait on signer");
         let stdout_str_s = String::from_utf8_lossy(&output_s.stdout);
         for line in stdout_str_s.lines() {
             if line.starts_with("BENCH") {
                 let parts: Vec<&str> = line.split(',').collect();
                 if parts.len() >= 3 {
-                    writeln!(file_s, "{},{},{},{}", n, t, parts[1], parts[2]).unwrap();
+                    writeln!(file_s, "{},{},{},{},{}", n, t, i, parts[1], parts[2]).unwrap();
                     println!("   [Signer] {}: {} µs", parts[1], parts[2]);
                 }
             }
