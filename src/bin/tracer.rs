@@ -58,7 +58,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // =========================================================================
 
     println!("[Tracer] Connecting to Combiner...");
-    let mut combiner_stream = TcpStream::connect(COMBINER_ADDR).await?;
+    let mut combiner_stream = loop {
+        match TcpStream::connect(COMBINER_ADDR).await {
+            Ok(stream) => {
+                println!("[Tracer] Connected to Combiner!");
+                break stream;
+            }
+            Err(_) => {
+                // Sleep for half a second and try again
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+    };
 
     // 1. Handshake: Send Hello
     let hello_combiner = Message::Hello {
