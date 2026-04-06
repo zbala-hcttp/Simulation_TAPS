@@ -20,16 +20,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Phase 1: Bootstrap from Authority
     // =========================================================================
 
-    let start_setup = Instant::now();
-    // 1. Connect to Authority
     println!("[Tracer] Connecting to Authority at {}...", AUTHORITY_ADDR);
     let mut auth_stream = TcpStream::connect(AUTHORITY_ADDR).await?;
 
-    // 2. Generate Ephemeral Transport Keys
+    let start_setup = Instant::now();
     let mut tracer = Tracer::new();
     let transport_pk_bytes = tracer.transport_kp.pk.serialize().to_vec();
 
-    // 3. Send Hello
     let hello = Message::Hello {
         id: 0,
         role: Role::Tracer,
@@ -37,7 +34,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     network::send(&mut auth_stream, &hello).await?;
 
-    // 4. Receive Welcome Package
     let msg = network::receive(&mut auth_stream).await?;
     match msg {
         Message::Secure {
@@ -52,6 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => return Err("Unexpected message from Authority".into()),
     }
+    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     // =========================================================================
     // Phase 2: Combiner Interaction
@@ -65,7 +62,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 break stream;
             }
             Err(_) => {
-                // Sleep for half a second and try again
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }
         }
@@ -88,14 +84,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             identity_pk,
             package: signed_pkg,
         } => {
-            // 1. Verify Combiner's Signature
-            // We use the same 'combiner_pk' we trusted from the Handsh
             let identity_pk = PublicKey::from_slice(&identity_pk)?;
             tracer.load_from_combiner(&signed_pkg, &identity_pk)?;
         }
         _ => return Err("Expected TracerPackage from Combiner".into()),
     }
-    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     let start_verify_sigma = Instant::now();
     tracer.verify_sigma()?;
@@ -104,13 +97,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let start_verify_proof = Instant::now();
     tracer.verify_proof()?;
-    let duration_verify_proof = start_verify_sigma.elapsed();
-    println!("BENCH,VerifyProof,{}", duration.as_micros());
+    let duration_verify_proof = start_verify_proof.elapsed();
+    println!("BENCH,VerifyProof,{}", duration_verify_proof.as_micros());
 
     let start_verify_sign = Instant::now();
     tracer.verify_sign();
     let duration_verify_sign = start_verify_sign.elapsed();
-    println!("BENCH,VerifySign,{}", duration.as_micros());
+    println!("BENCH,VerifySign,{}", duration_verify_sign.as_micros());
 
     println!("[Tracer] Protocol Finished Successfully.");
 

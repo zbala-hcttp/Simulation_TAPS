@@ -14,8 +14,6 @@ const COMBINER_ADDR: &str = "127.0.0.1:8081";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // 1. Parse Signer ID from Command Line Args
-    // Example usage: cargo run --bin signer 0
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: signer <id>");
@@ -62,7 +60,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => return Err("Expected Welcome from Authority".into()),
     }
-    drop(auth_stream); // Close Authority connection
+    drop(auth_stream);
+    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     // =========================================================================
     // Phase 2: Combiner Interaction
@@ -112,7 +111,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "[Signer #{}] Handshake Complete. Combiner Key Verified.",
         my_id
     );
-    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     // --- Round 1: Send Commitment ---
 

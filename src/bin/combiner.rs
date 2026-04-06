@@ -59,8 +59,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => return Err("Unexpected message from Authority".into()),
     }
+    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
-    // FIX: Copy the value (usize) immediately. Do not keep a reference.
     let n_signers = combiner.n.unwrap();
 
     println!("[Combiner] Bootstrap Complete. Quorum Size: {}", n_signers);
@@ -118,7 +118,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("[Combiner] All participants connected. Starting Protocol.\n");
 
-    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
     // =========================================================================
     // Phase 3: Protocol Execution
     // =========================================================================
