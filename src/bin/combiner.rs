@@ -8,11 +8,9 @@ use std::error::Error;
 use std::time::Instant;
 use tokio::net::{TcpListener, TcpStream};
 
-// Network Constants
 const AUTHORITY_ADDR: &str = "127.0.0.1:8080";
 const COMBINER_PORT: &str = "127.0.0.1:8081";
 
-// The message to be signed in this simulation
 const MESSAGE_BYTES: &[u8] = b"Hello TAPS: Distributed Privacy-Preserving Blockchain Transaction";
 
 #[tokio::main]
@@ -44,7 +42,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
     network::send(&mut auth_stream, &hello).await?;
 
-    // 4. Receive Welcome Package
     let msg = network::receive(&mut auth_stream).await?;
     match msg {
         Message::Secure {
@@ -74,7 +71,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let expected_connections = n_signers + 1;
 
-    // Fix: Explicit type annotation for the vector
     let mut signer_streams: Vec<Option<TcpStream>> = (0..n_signers).map(|_| None).collect();
 
     let mut tracer_stream: Option<TcpStream> = None;
@@ -122,7 +118,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Phase 3: Protocol Execution
     // =========================================================================
 
-    // --- Step 1: Collect Commitments (Round 1) ---
     println!("[Combiner] >> Round 1: Collecting Commitments...");
     let start_round1 = Instant::now();
     for (id, stream_opt) in signer_streams.iter_mut().enumerate() {
@@ -146,7 +141,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let duration_round1 = start_round1.elapsed();
     println!("BENCH,Aggregation,{}", duration_round1.as_micros());
 
-    // --- Compute Challenge ---
     println!("[Combiner] >> Computing Parameters (R, c)...");
     let start_aggregate_nonce = Instant::now();
     combiner.compute_aggregated_nonce()?;
@@ -163,13 +157,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let duration_compute_parameters = start_compute_parameters.elapsed();
     println!("BENCH,Compute Parameters,{}", duration_compute_parameters.as_micros());
 
-    // --- Round 2: Distribute Challenge & Receive Shares ---
     println!("[Combiner] >> Round 2: Broadcasting Challenge...");
 
-    // Prepare the authenticated package (R, c)
     let signer_pkg: BroadcastPackage = combiner.prepare_signer_package(); // Added ? for Result
 
-    // Broadcast to Signers
     for stream_opt in signer_streams.iter_mut() {
         if let Some(stream) = stream_opt {
             network::send(
@@ -201,22 +192,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // --- Finalization: Encrypt, ZKP, Sign ---
     println!("[Combiner] >> Finalization: Aggregating and Generating ZKP...");
 
-    // 1. Aggregate z
     let start_aggregate_sign = Instant::now();
     combiner.compute_aggregated_sign()?;
     let duration_aggregate_sign = start_aggregate_sign.elapsed();
     println!("BENCH,Aggregate Sign,{}", duration_aggregate_sign.as_micros());
 
-    // 2. Encrypt z -> C
     let start_encrypted_signature = Instant::now();
     combiner.compute_encrypted_signature()?;
     let duration_encrypted_signature = start_encrypted_signature.elapsed();
     println!("BENCH,Encrypted Signature,{}", duration_encrypted_signature.as_micros());
 
-    // 3. Generate ZKP Components
     let start_compute_phis = Instant::now();
     combiner.compute_phis()?;
     let duration_compute_phis = start_compute_phis.elapsed();
@@ -242,7 +229,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let duration_compute_compute_hats = start_compute_compute_hats.elapsed();
     println!("BENCH,Compute Hats,{}", duration_compute_compute_hats.as_micros());
 
-    // 4. Construct Final Sigma
     let start_construct_sigma = Instant::now();
     let sigma = combiner.construct_sigma(MESSAGE_BYTES)?;
     let duration_construct_sigma = start_construct_sigma.elapsed();
@@ -250,7 +236,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("[Combiner] >> Final Sigma Constructed!");
 
-    // --- Send to Tracer ---
     if let Some(stream) = tracer_stream.as_mut() {
         println!("[Combiner] Sending Result to Tracer...");
         let tracer_pkg = combiner.prepare_tracer_package(&sigma, &MESSAGE_BYTES);

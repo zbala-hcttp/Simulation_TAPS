@@ -116,21 +116,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("[Signer #{}] >> Round 1: Sending Commitment...", my_id);
 
-    // Encrypt the commitment using the Combiner's Key we just received
-
     let start_set_commitment = Instant::now();
     let comm_package = signer.set_commitment(&combiner_pk);
     let duration_set_commitment = start_set_commitment.elapsed();
     println!("BENCH,Commitment,{}", duration_set_commitment.as_micros());
 
     let msg_comm = Message::Secure {
-        pk: my_transport_pk.serialize().to_vec(), // Send our PK so Combiner knows who encrypted it
-        identity_pk: signer.identity_kp.pk.serialize().to_vec(), // Send our Identity PK for signature verification
+        pk: my_transport_pk.serialize().to_vec(),
+        identity_pk: signer.identity_kp.pk.serialize().to_vec(),
         package: comm_package,
     };
     network::send(&mut combiner_stream, &msg_comm).await?;
-
-    // --- Round 2: Receive Challenge & Sign ---
 
     println!(
         "[Signer #{}] >> Round 2: Waiting for Challenge (R, c)...",
@@ -144,21 +140,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             identity_pk,
             package: signed_pkg,
         } => {
-            // 1. Verify Combiner's Signature
-            // We use the same 'combiner_pk' we trusted from the Handsh
             let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
             println!("[Signer #{}] Received Challenge.", my_id);
 
-            // 3. Compute Share (z_i)
-            // We use the 'c' from the payload.
-            // We encrypt the result for the Combiner using 'combiner_pk'.
             let start_set_sigma = Instant::now();
             let sigma_pkg = signer.set_sigma(&signed_pkg, &combiner_pk, &identity_pubkey)
                 .expect("Could not prepare package");
             let duration_set_sigma = start_set_sigma.elapsed();
             println!("BENCH,Sigma,{}", duration_set_sigma.as_micros());
 
-            // 4. Send Share
             let msg_share = Message::Secure {
                 pk: my_transport_pk.serialize().to_vec(),
                 identity_pk: signer.identity_kp.pk.serialize().to_vec(),

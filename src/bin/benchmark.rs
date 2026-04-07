@@ -5,8 +5,6 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 fn main() {
-    // 1. Define Test Matrix
-    // Format: (n, t)
     let scenarios = vec![
         (5, 3),
         (10, 6),
@@ -14,11 +12,12 @@ fn main() {
         (30, 16),
         (50, 26),
         (100, 51),
+        (200, 101),
+        (300, 151),
         (500, 251),
     ];
 
 
-    // 2. Prepare Results File
     let mut file_s = OpenOptions::new()
         .create(true)
         .write(true)
@@ -26,7 +25,6 @@ fn main() {
         .open("benchmark_results_signers.csv")
         .expect("Cannot open file");
 
-    // 2. Prepare Results File
     let mut file_c = OpenOptions::new()
         .create(true)
         .write(true)
@@ -34,7 +32,6 @@ fn main() {
         .open("benchmark_results_combiner.csv")
         .expect("Cannot open file");
 
-    // 2. Prepare Results File
     let mut file_t = OpenOptions::new()
         .create(true)
         .write(true)
@@ -50,13 +47,11 @@ fn main() {
     println!("   STARTING TAPS BENCHMARK SUITE");
     println!("==================================================");
 
-    // 3. Build Once (Release Mode)
     Command::new("cargo")
         .args(&["build", "--release", "--bins"])
         .status()
         .expect("Build failed");
 
-    // 4. Run Loop
     for (n, t) in scenarios {
         run_scenario(n, t, &mut file_s, &mut file_c, &mut file_t);
 
@@ -72,7 +67,6 @@ fn run_scenario(n: usize, t: usize, file_s: &mut std::fs::File, file_c: &mut std
     let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
     let mut children: Vec<Child> = Vec::new();
 
-    // A. Start Authority (Pass N and T)
     let _auth = Command::new(format!("{}/authority{}", release_path, ext))
         .arg(n.to_string())
         .arg(t.to_string())
@@ -82,24 +76,19 @@ fn run_scenario(n: usize, t: usize, file_s: &mut std::fs::File, file_c: &mut std
     children.push(_auth);
     thread::sleep(Duration::from_secs(2));
 
-    // B. Start Combiner (Pass N)
-    // We capture stdout to parse BENCH lines
     let combiner = Command::new(format!("{}/combiner{}", release_path, ext))
         .stdout(Stdio::piped())
         .spawn()
         .expect("Failed to start Combiner");
-    // Don't push to children yet, we need to read its output
 
     thread::sleep(Duration::from_secs(2));
 
-    // C. Start Tracer
     let _tracer = Command::new(format!("{}/tracer{}", release_path, ext))
         .stdout(Stdio::piped())
         .spawn()
         .expect("Failed to start Tracer");
 
     let mut signer_handles = Vec::new();
-    // D. Start N Signers
     for i in 0..n {
         let _s = Command::new(format!("{}/signer{}", release_path, ext))
             .arg(i.to_string())
@@ -110,16 +99,11 @@ fn run_scenario(n: usize, t: usize, file_s: &mut std::fs::File, file_c: &mut std
         thread::sleep(Duration::from_millis(10)); // Slight stagger
     }
 
-    // E. Read Combiner Output & Wait
-    // This blocks until Combiner finishes
     let output_c = combiner.wait_with_output().expect("Combiner failed");
 
-    // F. Parse Output and Save to CSV
     let stdout_str_c = String::from_utf8_lossy(&output_c.stdout);
     for line in stdout_str_c.lines() {
         if line.starts_with("BENCH") {
-            // Log format: BENCH,PhaseName,Microseconds
-            // Output format: N,T,PhaseName,Microseconds
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() >= 3 {
                 let phase = parts[1];
@@ -147,12 +131,9 @@ fn run_scenario(n: usize, t: usize, file_s: &mut std::fs::File, file_c: &mut std
 
     let output_t = _tracer.wait_with_output().expect("Combiner failed");
 
-    // F. Parse Output and Save to CSV
     let stdout_str_t = String::from_utf8_lossy(&output_t.stdout);
     for line in stdout_str_t.lines() {
         if line.starts_with("BENCH") {
-            // Log format: BENCH,PhaseName,Microseconds
-            // Output format: N,T,PhaseName,Microseconds
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() >= 3 {
                 let phase = parts[1];
@@ -163,7 +144,6 @@ fn run_scenario(n: usize, t: usize, file_s: &mut std::fs::File, file_c: &mut std
         }
     }
 
-    // G. Cleanup
     for mut child in children {
         let _ = child.kill();
     }

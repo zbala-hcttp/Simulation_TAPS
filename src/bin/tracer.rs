@@ -1,4 +1,3 @@
-//use tokio::net::TcpListener;
 use secp256k1::PublicKey;
 use simulation_taps::{
     network::{self, Message, Role},
@@ -67,15 +66,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // 1. Handshake: Send Hello
     let hello_combiner = Message::Hello {
         id: 0,
         role: Role::Tracer,
         pk: tracer.transport_kp.pk.serialize().to_vec(),
     };
     network::send(&mut combiner_stream, &hello_combiner).await?;
-
-    // --- Round 2: Receive Challenge & Sign ---
 
     let msg = network::receive(&mut combiner_stream).await?;
 

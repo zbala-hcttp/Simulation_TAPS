@@ -1,19 +1,15 @@
 use crate::{authority, combiner, crypto::*};
 use secp256k1::{Error, PublicKey, Scalar};
 use taps::protocol::taps::*;
-//use serde::{Serialize, Deserialize};
 use bincode;
 
 pub struct Tracer {
-    // 1. Networking Keys
-    pub identity_kp: IdentityKeyPair, // Long-term Identity (Signing)
-    pub transport_kp: TransportKeyPair, // Ephemeral Transport (Encryption)
+    pub identity_kp: IdentityKeyPair,
+    pub transport_kp: TransportKeyPair,
 
-    // 2. TAPS Protocol Keys
     pub taps_kp: Option<KeyPair>,
     pub tracing_kps: Option<Vec<KeyPair>>,
 
-    // 3. TAPS Protocol State
     pub T: Option<ElGamalCiphertext>,
     pub v0: Option<PublicKey>,
     pub v_vec: Option<Vec<PublicKey>>,
@@ -53,8 +49,6 @@ impl Tracer {
         authority_pk: &PublicKey,
         identity_pk: &PublicKey,
     ) -> Result<(), Error> {
-        // 1. VERIFY Signature & Timestamp
-        // Use the wrapper method in IdentityKeyPair
         let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
 
         if !is_valid {
@@ -64,9 +58,6 @@ impl Tracer {
             return Err(Error::InvalidSignature);
         }
 
-        // 2. DECRYPT Payload
-        // Use the wrapper method in TransportKeyPair
-        // This handles deriving the AES key and decrypting with the nonce
         let plaintext_bytes = self.transport_kp.decrypt_from(
             authority_pk, // Sender PK (Authority)
             &secure_pkg.ciphertext,
@@ -86,10 +77,9 @@ impl Tracer {
 
     pub fn load_from_combiner(
         &mut self,
-        broadcast_pkg: &BroadcastPackage, // Assuming you defined this struct wrapper
+        broadcast_pkg: &BroadcastPackage,
         identity_pk: &PublicKey,
     ) -> Result<(), Error> {
-        // 1. VERIFY Signature
         let is_valid = IdentityKeyPair::verify_broadcast_data(identity_pk, broadcast_pkg);
         if !is_valid {
             eprintln!("[Tracer] Error: BroadcastPackage verification failed.");
@@ -105,12 +95,8 @@ impl Tracer {
             }
         };
 
-        // 3. Load State
-        // Assuming config.T is the ElGamalCiphertext
         self.T = Some(config.T.clone());
 
-        // CRITICAL FIX: Extract v0 and v from T so verify_proof doesn't panic
-        // Assuming ElGamalCiphertext has fields or methods for these:
         self.v0 = Some(config.v0.clone());
         self.v_vec = Some(config.v_vec.clone());
 
@@ -168,7 +154,7 @@ impl Tracer {
         let v = self.v_vec.as_ref().expect("v_vec not set in Tracer");
         let tr_keys = self.tracing_kps.as_ref().expect("Tracing keys not set in Tracer");
         let b_i = decrypt_bits(&v0, &v, &tr_keys).expect("Failed to decrypt bits!");
-        //println!("b_i: {:?}", b_i);
+
         let pk = self.pk.as_ref().expect("PK not set in Tracer");
         let quo = Quorum::set(&pk, &b_i);
         let g_z: PublicKey = schnorr_signature(&R, &quo, &c);

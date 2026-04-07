@@ -19,14 +19,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("[Authority] Starting with N={} T={}...", n, t);
     println!("[Authority] Starting TAPS Setup Server on {}...", PORT);
 
-    // 1. Initialize Cryptographic Authority
     let auth = Authority::new(n);
     println!("[Authority] Generated Master Keys.");
 
-    // 2. Start TCP Listener
     let listener = TcpListener::bind(PORT).await?;
 
-    // We need to collect streams for: Signers (0..N), Combiner, Tracer
     let mut signers: Vec<Option<(TcpStream, PublicKey)>> = (0..n).map(|_| None).collect();
     let mut combiner = None;
     let mut tracer = None;
@@ -49,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         match msg {
             Message::Hello { id, role, pk } => {
-                let pubkey = PublicKey::from_slice(&pk)?; // Deserialize their transport key
+                let pubkey = PublicKey::from_slice(&pk)?;
 
                 match role {
                     Role::Signer => {
@@ -79,15 +76,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("\n[Authority] All actors connected! Distributing keys...\n");
 
-    // 4. Distribution Phase
-
-    // A. Send to Signers
     for (i, opt) in signers.iter_mut().enumerate() {
         if let Some((stream, pk)) = opt {
-            // Prepare package
             let pkg = auth.prepare_signer_package(i, pk);
 
-            // Send
             network::send(
                 stream,
                 &Message::Secure {
@@ -101,9 +93,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // B. Send to Combiner (Requires Quorum)
     if let Some((stream, pk)) = combiner.as_mut() {
-        let quorum = auth.keys.set_quorum(t); // Threshold t=2
+        let quorum = auth.keys.set_quorum(t);
         let pkg = auth.prepare_combiner_package(quorum, n, t, pk);
         network::send(
             stream,
@@ -117,7 +108,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("[Authority] Sent SecurePackage to Combiner");
     }
 
-    // C. Send to Tracer
     if let Some((stream, pk)) = tracer.as_mut() {
         let pkg = auth.prepare_tracer_package(pk);
         network::send(
