@@ -1,11 +1,10 @@
-use secp256k1::PublicKey;
 use simulation_taps::{
     network::{self, Message, Role},
     signer::Signer,
 };
 use std::env;
 use std::error::Error;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 
 // Network Constants
@@ -22,46 +21,54 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let my_id: usize = args[1].parse()?;
 
     println!("[Signer #{}] Starting Node...", my_id);
-    let start_setup = Instant::now();
+
     // =========================================================================
     // Phase 1: Bootstrap from Authority
     // =========================================================================
 
-    // 1. Initialize our keys
+    // 1. Initialize our keys. Timed: this is real setup work.
+    let start_keygen = Instant::now();
     let mut signer = Signer::new(my_id);
+    let keygen_us = start_keygen.elapsed().as_micros();
+
     let my_transport_pk = signer.transport_kp.pk;
+    let my_identity_pk = signer.identity_kp.pk;
 
     // 2. Connect to Authority
     println!("[Signer #{}] Connecting to Authority...", my_id);
     let mut auth_stream = TcpStream::connect(AUTHORITY_ADDR).await?;
 
-    // 3. Handshake: Send our Hello
+    // The Authority publishes its anchor before it listens, so by now it exists.
+    let anchor = network::load_authority_anchor()?;
+
+    // 3. Handshake: Send our Hello (transport + identity keys)
     let hello_auth = Message::Hello {
         id: my_id,
         role: Role::Signer,
         pk: my_transport_pk.serialize().to_vec(),
+        identity_pk: my_identity_pk.serialize().to_vec(),
     };
     network::send(&mut auth_stream, &hello_auth).await?;
 
     // 4. Receive Credentials (Encrypted SignerPackage)
+    //    The blocking wait for every other actor to connect is deliberately
+    //    outside the benchmark timer - it is scheduling, not protocol cost.
     let msg = network::receive(&mut auth_stream).await?;
 
     match msg {
-        Message::Secure {
-            pk,
-            identity_pk,
-            package,
-        } => {
+        Message::Secure { package } => {
             println!("[Signer #{}] Received Credentials.", my_id);
-            let transport_key = PublicKey::from_slice(&pk)?;
-            let identity_key = PublicKey::from_slice(&identity_pk)?;
-            signer.load_from_authority(&package, &transport_key, &identity_key)?;
+            let start_bootstrap = Instant::now();
+            signer.load_from_authority(&package, &anchor)?;
+            println!(
+                "BENCH,Setup,{}",
+                keygen_us + start_bootstrap.elapsed().as_micros()
+            );
             println!("[Signer #{}] TAPS Key Loaded.", my_id);
         }
         _ => return Err("Expected Welcome from Authority".into()),
     }
     drop(auth_stream);
-    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     // =========================================================================
     // Phase 2: Combiner Interaction
@@ -84,49 +91,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     "[Signer #{}] Combiner not ready. Retrying in 2 seconds...",
                     my_id
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(2)).await;
             }
         }
     };
 
-    // 1. Handshake: Send Hello
+    // 1. Handshake: Announce ourselves. The Combiner already holds our keys
+    //    from the Authority, so this only tells it which id we are; the packages
+    //    that follow are what actually prove it.
     let hello_combiner = Message::Hello {
         id: my_id,
         role: Role::Signer,
         pk: my_transport_pk.serialize().to_vec(),
+        identity_pk: my_identity_pk.serialize().to_vec(),
     };
     network::send(&mut combiner_stream, &hello_combiner).await?;
-
-    // 2. Handshake: Receive Combiner's Hello (Contains Combiner's Public Key)
-    // CRITICAL: We obtain the Combiner's key here.
-    let combiner_pk = match network::receive(&mut combiner_stream).await? {
-        Message::Hello {
-            role: Role::Combiner,
-            pk,
-            ..
-        } => PublicKey::from_slice(&pk)?,
-        _ => return Err("Expected Hello from Combiner".into()),
-    };
-    println!(
-        "[Signer #{}] Handshake Complete. Combiner Key Verified.",
-        my_id
-    );
+    println!("[Signer #{}] Handshake sent.", my_id);
 
     // --- Round 1: Send Commitment ---
 
     println!("[Signer #{}] >> Round 1: Sending Commitment...", my_id);
 
     let start_set_commitment = Instant::now();
-    let comm_package = signer.set_commitment(&combiner_pk);
+    let comm_package = signer.set_commitment()?;
     let duration_set_commitment = start_set_commitment.elapsed();
     println!("BENCH,Commitment,{}", duration_set_commitment.as_micros());
 
-    let msg_comm = Message::Secure {
-        pk: my_transport_pk.serialize().to_vec(),
-        identity_pk: signer.identity_kp.pk.serialize().to_vec(),
-        package: comm_package,
-    };
-    network::send(&mut combiner_stream, &msg_comm).await?;
+    network::send(
+        &mut combiner_stream,
+        &Message::Secure {
+            package: comm_package,
+        },
+    )
+    .await?;
 
     println!(
         "[Signer #{}] >> Round 2: Waiting for Challenge (R, c)...",
@@ -137,24 +134,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match msg {
         Message::Broadcast {
-            identity_pk,
             package: signed_pkg,
         } => {
-            let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
             println!("[Signer #{}] Received Challenge.", my_id);
 
             let start_set_sigma = Instant::now();
-            let sigma_pkg = signer.set_sigma(&signed_pkg, &combiner_pk, &identity_pubkey)
-                .expect("Could not prepare package");
+            let sigma_pkg = signer.set_sigma(&signed_pkg)?;
             let duration_set_sigma = start_set_sigma.elapsed();
             println!("BENCH,Sigma,{}", duration_set_sigma.as_micros());
 
-            let msg_share = Message::Secure {
-                pk: my_transport_pk.serialize().to_vec(),
-                identity_pk: signer.identity_kp.pk.serialize().to_vec(),
-                package: sigma_pkg,
-            };
-            network::send(&mut combiner_stream, &msg_share).await?;
+            network::send(
+                &mut combiner_stream,
+                &Message::Secure { package: sigma_pkg },
+            )
+            .await?;
             println!("[Signer #{}] Sent Signature Share.", my_id);
         }
         _ => return Err("Expected SignerPackage from Combiner".into()),

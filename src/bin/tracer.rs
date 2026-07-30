@@ -1,4 +1,3 @@
-use secp256k1::PublicKey;
 use simulation_taps::{
     network::{self, Message, Role},
     tracer::Tracer,
@@ -19,35 +18,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Phase 1: Bootstrap from Authority
     // =========================================================================
 
+    // Key generation is real setup work, so it is timed.
+    let start_keygen = Instant::now();
+    let mut tracer = Tracer::new();
+    let keygen_us = start_keygen.elapsed().as_micros();
+
     println!("[Tracer] Connecting to Authority at {}...", AUTHORITY_ADDR);
     let mut auth_stream = TcpStream::connect(AUTHORITY_ADDR).await?;
 
-    let start_setup = Instant::now();
-    let mut tracer = Tracer::new();
-    let transport_pk_bytes = tracer.transport_kp.pk.serialize().to_vec();
+    let anchor = network::load_authority_anchor()?;
 
     let hello = Message::Hello {
         id: 0,
         role: Role::Tracer,
-        pk: transport_pk_bytes,
+        pk: tracer.transport_kp.pk.serialize().to_vec(),
+        identity_pk: tracer.identity_kp.pk.serialize().to_vec(),
     };
     network::send(&mut auth_stream, &hello).await?;
 
+    // Waiting for every other actor to register is not protocol cost, so the
+    // benchmark timer starts only once the package is in hand.
     let msg = network::receive(&mut auth_stream).await?;
     match msg {
-        Message::Secure {
-            pk,
-            identity_pk,
-            package,
-        } => {
+        Message::Secure { package } => {
             println!("[Tracer] Received SecurePackage from Authority. Bootstrapping...");
-            let pubkey = PublicKey::from_slice(&pk)?;
-            let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
-            tracer.load_from_authority(&package, &pubkey, &identity_pubkey)?;
+            let start_bootstrap = Instant::now();
+            tracer.load_from_authority(&package, &anchor)?;
+            println!(
+                "BENCH,Setup,{}",
+                keygen_us + start_bootstrap.elapsed().as_micros()
+            );
         }
         _ => return Err("Unexpected message from Authority".into()),
     }
-    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     // =========================================================================
     // Phase 2: Combiner Interaction
@@ -70,6 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         id: 0,
         role: Role::Tracer,
         pk: tracer.transport_kp.pk.serialize().to_vec(),
+        identity_pk: tracer.identity_kp.pk.serialize().to_vec(),
     };
     network::send(&mut combiner_stream, &hello_combiner).await?;
 
@@ -77,29 +81,42 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match msg {
         Message::Broadcast {
-            identity_pk,
             package: signed_pkg,
         } => {
-            let identity_pk = PublicKey::from_slice(&identity_pk)?;
-            tracer.load_from_combiner(&signed_pkg, &identity_pk)?;
+            tracer.load_from_combiner(&signed_pkg)?;
         }
         _ => return Err("Expected TracerPackage from Combiner".into()),
     }
 
     let start_verify_sigma = Instant::now();
-    tracer.verify_sigma()?;
+    let sigma_ok = tracer.verify_sigma()?;
     let duration = start_verify_sigma.elapsed();
     println!("BENCH,VerifySigma,{}", duration.as_micros());
+    if !sigma_ok {
+        return Err("Combiner signature (sigma) is invalid".into());
+    }
 
     let start_verify_proof = Instant::now();
-    tracer.verify_proof()?;
+    let proof_ok = tracer.verify_proof()?;
     let duration_verify_proof = start_verify_proof.elapsed();
     println!("BENCH,VerifyProof,{}", duration_verify_proof.as_micros());
+    if !proof_ok {
+        return Err("Accountability proof is invalid".into());
+    }
 
     let start_verify_sign = Instant::now();
-    tracer.verify_sign();
+    let bits = tracer.verify_sign()?;
     let duration_verify_sign = start_verify_sign.elapsed();
     println!("BENCH,VerifySign,{}", duration_verify_sign.as_micros());
+
+    let quorum_size: usize = bits.iter().filter(|&&b| b == 1).count();
+    println!(
+        "[Tracer] Traced quorum: {} of {} signers (threshold t={}) -> {:?}",
+        quorum_size,
+        bits.len(),
+        tracer.t.unwrap(),
+        bits
+    );
 
     println!("[Tracer] Protocol Finished Successfully.");
 

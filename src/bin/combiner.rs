@@ -1,4 +1,3 @@
-use secp256k1::PublicKey;
 use simulation_taps::crypto::BroadcastPackage;
 use simulation_taps::{
     combiner::Combiner,
@@ -21,42 +20,47 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Phase 1: Bootstrap from Authority
     // =========================================================================
 
-    // 1. Connect to Authority
+    // 1. Generate Ephemeral Transport Keys. Timed: real setup work.
+    let start_keygen = Instant::now();
+    let mut combiner = Combiner::new();
+    let keygen_us = start_keygen.elapsed().as_micros();
+
+    let transport_pk_bytes = combiner.transport_kp.pk.serialize().to_vec();
+    let identity_pk_bytes = combiner.identity_kp.pk.serialize().to_vec();
+
+    // 2. Connect to Authority
     println!(
         "[Combiner] Connecting to Authority at {}...",
         AUTHORITY_ADDR
     );
-
-    let start_setup = Instant::now();
     let mut auth_stream = TcpStream::connect(AUTHORITY_ADDR).await?;
 
-    // 2. Generate Ephemeral Transport Keys
-    let mut combiner = Combiner::new();
-    let transport_pk_bytes = combiner.transport_kp.pk.serialize().to_vec();
+    let anchor = network::load_authority_anchor()?;
 
     // 3. Send Hello
     let hello = Message::Hello {
         id: 0,
         role: Role::Combiner,
-        pk: transport_pk_bytes.clone(),
+        pk: transport_pk_bytes,
+        identity_pk: identity_pk_bytes,
     };
     network::send(&mut auth_stream, &hello).await?;
 
+    // The wait for all other actors to register is not protocol cost, so the
+    // benchmark timer starts only once the package is in hand.
     let msg = network::receive(&mut auth_stream).await?;
     match msg {
-        Message::Secure {
-            pk,
-            identity_pk,
-            package,
-        } => {
+        Message::Secure { package } => {
             println!("[Combiner] Received SecurePackage from Authority. Bootstrapping...");
-            let pubkey = PublicKey::from_slice(&pk)?;
-            let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
-            combiner.load_from_authority(&package, &pubkey, &identity_pubkey)?;
+            let start_bootstrap = Instant::now();
+            combiner.load_from_authority(&package, &anchor)?;
+            println!(
+                "BENCH,Setup,{}",
+                keygen_us + start_bootstrap.elapsed().as_micros()
+            );
         }
         _ => return Err("Unexpected message from Authority".into()),
     }
-    println!("BENCH,Setup,{}", start_setup.elapsed().as_micros());
 
     let n_signers = combiner.n.unwrap();
 
@@ -85,28 +89,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (mut socket, addr) = listener.accept().await?;
         println!("[Combiner] Incoming connection from {}", addr);
 
-        // Handshake
+        // Handshake. This only claims an id; the Authority-issued keys are what
+        // authenticate the packages that follow.
         let msg = network::receive(&mut socket).await?;
         if let Message::Hello { id, role, .. } = msg {
             match role {
                 Role::Signer => {
-                    if id < n_signers {
-                        println!("[Combiner] Signer #{} verified.", id);
+                    if id < n_signers && signer_streams[id].is_none() {
+                        println!("[Combiner] Signer #{} connected.", id);
                         signer_streams[id] = Some(socket);
                         connected_count += 1;
-
-                        let hello = Message::Hello {
-                            id: 0,
-                            role: Role::Combiner,
-                            pk: transport_pk_bytes.clone(),
-                        };
-                        network::send(signer_streams[id].as_mut().unwrap(), &hello).await?;
+                    } else {
+                        println!("[Combiner] Rejected signer claim for id {}.", id);
                     }
                 }
                 Role::Tracer => {
-                    println!("[Combiner] Tracer verified.");
-                    tracer_stream = Some(socket);
-                    connected_count += 1;
+                    if tracer_stream.is_none() {
+                        println!("[Combiner] Tracer connected.");
+                        tracer_stream = Some(socket);
+                        connected_count += 1;
+                    }
                 }
                 _ => {}
             }
@@ -119,54 +121,57 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // =========================================================================
 
     println!("[Combiner] >> Round 1: Collecting Commitments...");
-    let start_round1 = Instant::now();
+    // Accumulate only the per-message verify/decrypt/deserialize cost; time spent
+    // blocked on the socket is scheduling, not protocol work.
+    let mut commit_processing_us: u128 = 0;
     for (id, stream_opt) in signer_streams.iter_mut().enumerate() {
         if let Some(stream) = stream_opt {
             let msg = network::receive(stream).await?;
 
-            if let Message::Secure {
-                pk,
-                identity_pk,
-                package,
-            } = msg
-            {
-                // n_signers is a usize (copy), so it doesn't block mutable borrow of combiner
-                let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
-                let pubkey = PublicKey::from_slice(&pk)?;
-                combiner.load_commitment(&id, &package, &pubkey, &identity_pubkey)?;
+            if let Message::Secure { package } = msg {
+                let start = Instant::now();
+                combiner.load_commitment(&id, &package)?;
+                commit_processing_us += start.elapsed().as_micros();
                 println!("[Combiner] Verified Commitment from Signer #{}", id);
             }
         }
     }
-    let duration_round1 = start_round1.elapsed();
-    println!("BENCH,Aggregation,{}", duration_round1.as_micros());
+    println!("BENCH,Aggregation,{}", commit_processing_us);
 
     println!("[Combiner] >> Computing Parameters (R, c)...");
     let start_aggregate_nonce = Instant::now();
     combiner.compute_aggregated_nonce()?;
     let duration_aggregate_nonce = start_aggregate_nonce.elapsed();
-    println!("BENCH,Round_Aggregate_Nonce,{}", duration_aggregate_nonce.as_micros());
+    println!(
+        "BENCH,Round_Aggregate_Nonce,{}",
+        duration_aggregate_nonce.as_micros()
+    );
 
     let start_encrypt_threshold = Instant::now();
     combiner.encrypt_threshold()?;
     let duration_encrypt_threshold = start_encrypt_threshold.elapsed();
-    println!("BENCH,EncryptionThreshold,{}", duration_encrypt_threshold.as_micros());
+    println!(
+        "BENCH,EncryptionThreshold,{}",
+        duration_encrypt_threshold.as_micros()
+    );
 
     let start_compute_parameters = Instant::now();
     combiner.compute_parameters(MESSAGE_BYTES)?;
     let duration_compute_parameters = start_compute_parameters.elapsed();
-    println!("BENCH,Compute Parameters,{}", duration_compute_parameters.as_micros());
+    println!(
+        "BENCH,Compute Parameters,{}",
+        duration_compute_parameters.as_micros()
+    );
 
     println!("[Combiner] >> Round 2: Broadcasting Challenge...");
 
-    let signer_pkg: BroadcastPackage = combiner.prepare_signer_package(); // Added ? for Result
+    let signer_pkg: BroadcastPackage = combiner.prepare_signer_package();
 
     for stream_opt in signer_streams.iter_mut() {
         if let Some(stream) = stream_opt {
             network::send(
                 stream,
                 &Message::Broadcast {
-                    identity_pk: combiner.identity_kp.pk.serialize().to_vec(),
                     package: signer_pkg.clone(),
                 },
             )
@@ -175,44 +180,57 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("[Combiner] >> Round 2: Collecting Signature Shares...");
+    let mut share_processing_us: u128 = 0;
     for (id, stream_opt) in signer_streams.iter_mut().enumerate() {
         if let Some(stream) = stream_opt {
             let msg = network::receive(stream).await?;
-            if let Message::Secure {
-                pk,
-                identity_pk,
-                package,
-            } = msg
-            {
-                let pubkey = PublicKey::from_slice(&pk)?;
-                let identity_pubkey = PublicKey::from_slice(&identity_pk)?;
-                combiner.load_sigma(&id, &package, &pubkey, &identity_pubkey)?;
+            if let Message::Secure { package } = msg {
+                let start = Instant::now();
+                combiner.load_sigma(&id, &package)?;
+                share_processing_us += start.elapsed().as_micros();
                 println!("[Combiner] Received Share from Signer #{}", id);
             }
         }
     }
+    println!("BENCH,Collect Shares,{}", share_processing_us);
 
     println!("[Combiner] >> Finalization: Aggregating and Generating ZKP...");
 
     let start_aggregate_sign = Instant::now();
     combiner.compute_aggregated_sign()?;
     let duration_aggregate_sign = start_aggregate_sign.elapsed();
-    println!("BENCH,Aggregate Sign,{}", duration_aggregate_sign.as_micros());
+    println!(
+        "BENCH,Aggregate Sign,{}",
+        duration_aggregate_sign.as_micros()
+    );
 
     let start_encrypted_signature = Instant::now();
     combiner.compute_encrypted_signature()?;
     let duration_encrypted_signature = start_encrypted_signature.elapsed();
-    println!("BENCH,Encrypted Signature,{}", duration_encrypted_signature.as_micros());
+    println!(
+        "BENCH,Encrypted Signature,{}",
+        duration_encrypted_signature.as_micros()
+    );
+
+    // Encrypted bits (and gamma) must exist before alpha is drawn, and alpha
+    // before phi_i, which depends on it.
+    let start_compute_encrypted_bits = Instant::now();
+    combiner.compute_encrypted_bits()?;
+    let duration_compute_encrypted_bits = start_compute_encrypted_bits.elapsed();
+    println!(
+        "BENCH,Compute Encrypted Bits,{}",
+        duration_compute_encrypted_bits.as_micros()
+    );
+
+    let start_compute_alpha = Instant::now();
+    combiner.compute_alpha()?;
+    let duration_compute_alpha = start_compute_alpha.elapsed();
+    println!("BENCH,Compute Alpha,{}", duration_compute_alpha.as_micros());
 
     let start_compute_phis = Instant::now();
     combiner.compute_phis()?;
     let duration_compute_phis = start_compute_phis.elapsed();
     println!("BENCH,Compute Phis,{}", duration_compute_phis.as_micros());
-
-    let start_compute_encrypted_bits = Instant::now();
-    combiner.compute_encrypted_bits()?;
-    let duration_compute_encrypted_bits = start_compute_encrypted_bits.elapsed();
-    println!("BENCH,Compute Encrypted Bits,{}", duration_compute_encrypted_bits.as_micros());
 
     let start_compute_blinds = Instant::now();
     combiner.compute_blinds(n_signers)?;
@@ -222,27 +240,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let start_compute_proofs = Instant::now();
     combiner.compute_proofs()?;
     let duration_compute_proofs = start_compute_proofs.elapsed();
-    println!("BENCH,Proof s,{}", duration_compute_proofs.as_micros());
+    println!("BENCH,Proofs,{}", duration_compute_proofs.as_micros());
+
+    // beta is only well defined once the commitments S1..S4c above exist.
+    let start_compute_beta = Instant::now();
+    combiner.compute_beta()?;
+    let duration_compute_beta = start_compute_beta.elapsed();
+    println!("BENCH,Compute Beta,{}", duration_compute_beta.as_micros());
 
     let start_compute_compute_hats = Instant::now();
     combiner.compute_hats()?;
     let duration_compute_compute_hats = start_compute_compute_hats.elapsed();
-    println!("BENCH,Compute Hats,{}", duration_compute_compute_hats.as_micros());
+    println!(
+        "BENCH,Compute Hats,{}",
+        duration_compute_compute_hats.as_micros()
+    );
 
     let start_construct_sigma = Instant::now();
     let sigma = combiner.construct_sigma(MESSAGE_BYTES)?;
     let duration_construct_sigma = start_construct_sigma.elapsed();
-    println!("BENCH,Construct Sigma,{}", duration_construct_sigma.as_micros());
+    println!(
+        "BENCH,Construct Sigma,{}",
+        duration_construct_sigma.as_micros()
+    );
 
     println!("[Combiner] >> Final Sigma Constructed!");
 
     if let Some(stream) = tracer_stream.as_mut() {
         println!("[Combiner] Sending Result to Tracer...");
-        let tracer_pkg = combiner.prepare_tracer_package(&sigma, &MESSAGE_BYTES);
+        let tracer_pkg = combiner.prepare_tracer_package(&sigma, MESSAGE_BYTES);
         network::send(
             stream,
             &Message::Broadcast {
-                identity_pk: combiner.identity_kp.pk.serialize().to_vec(),
                 package: tracer_pkg,
             },
         )

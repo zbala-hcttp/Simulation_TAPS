@@ -1,4 +1,5 @@
 use crate::crypto::*;
+use crate::network::AuthorityAnchor;
 use bincode;
 use secp256k1::PublicKey;
 use serde::{Deserialize, Serialize};
@@ -46,16 +47,29 @@ impl KeyPairs {
     }
 }
 
+/// Network keys of one actor, as registered with the Authority.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct ActorKeys {
+    pub identity_pk: PublicKey,
+    pub transport_pk: PublicKey,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignerPackage {
     pub my_kp: KeyPair,
+    /// Authenticated network keys of the Combiner, so the signer never has to
+    /// take them from an unverified handshake.
+    pub combiner_keys: ActorKeys,
 }
 
 impl SignerPackage {
-    pub fn new(auth_keys: &KeyPairs, index: usize) -> Self {
+    pub fn new(auth_keys: &KeyPairs, index: usize, combiner_keys: ActorKeys) -> Self {
         let my_kp = auth_keys.signers_keys[index].clone();
 
-        SignerPackage { my_kp }
+        SignerPackage {
+            my_kp,
+            combiner_keys,
+        }
     }
 }
 
@@ -67,10 +81,19 @@ pub struct CombinerPackage {
     pub(crate) t: usize,
     pub quo: Quorum,
     pub tks: TracingKeys,
+    /// Network keys of every signer, indexed by signer id. This is what lets the
+    /// Combiner tell a real share from signer #i apart from an impersonated one.
+    pub signer_keys: Vec<ActorKeys>,
 }
 
 impl CombinerPackage {
-    pub fn new(auth_keys: &KeyPairs, quo: Quorum, n: usize, t: usize) -> Self {
+    pub fn new(
+        auth_keys: &KeyPairs,
+        quo: Quorum,
+        n: usize,
+        t: usize,
+        signer_keys: Vec<ActorKeys>,
+    ) -> Self {
         CombinerPackage {
             kp_cs: auth_keys.combiner_keys.clone(),
             pk: auth_keys.set_pk(),
@@ -78,6 +101,7 @@ impl CombinerPackage {
             t: t,
             quo,
             tks: TracingKeys::set(&auth_keys.tracing_keys),
+            signer_keys,
         }
     }
 }
@@ -87,14 +111,21 @@ pub struct TracerPackage {
     pub kp_t: KeyPair,
     pub pk: PK,
     pub tracing_keys: Vec<KeyPair>,
+    /// Public system threshold. The tracer needs it to check that the quorum it
+    /// recovers is actually large enough.
+    pub t: usize,
+    /// Authenticated network keys of the Combiner.
+    pub combiner_keys: ActorKeys,
 }
 
 impl TracerPackage {
-    pub fn new(auth_keys: &KeyPairs) -> Self {
+    pub fn new(auth_keys: &KeyPairs, t: usize, combiner_keys: ActorKeys) -> Self {
         TracerPackage {
             kp_t: auth_keys.tracer_keys.clone(),
             pk: auth_keys.set_pk(),
             tracing_keys: auth_keys.tracing_keys.clone(),
+            t,
+            combiner_keys,
         }
     }
 }
@@ -134,9 +165,22 @@ impl Authority {
         }
     }
 
+    /// The Authority's own public keys, published as the trust anchor.
+    pub fn anchor(&self) -> AuthorityAnchor {
+        AuthorityAnchor {
+            identity_pk: self.identity_kp.pk,
+            transport_pk: self.transport_kp.pk,
+        }
+    }
+
     // --- 1. Prepare Signer Package ---
-    pub fn prepare_signer_package(&self, index: usize, receiver_pk: &PublicKey) -> SecurePackage {
-        let pkg = SignerPackage::new(&self.keys, index);
+    pub fn prepare_signer_package(
+        &self,
+        index: usize,
+        combiner_keys: ActorKeys,
+        receiver_pk: &PublicKey,
+    ) -> SecurePackage {
+        let pkg = SignerPackage::new(&self.keys, index, combiner_keys);
         self.secure_package(&pkg, receiver_pk)
     }
 
@@ -146,16 +190,22 @@ impl Authority {
         quorum: Quorum,
         n: usize,
         t: usize,
+        signer_keys: Vec<ActorKeys>,
         receiver_pk: &PublicKey,
     ) -> SecurePackage {
         // Pass the chosen quorum into the package
-        let pkg = CombinerPackage::new(&self.keys, quorum, n, t);
+        let pkg = CombinerPackage::new(&self.keys, quorum, n, t, signer_keys);
         self.secure_package(&pkg, receiver_pk)
     }
 
     // --- 3. Prepare Tracer Package ---
-    pub fn prepare_tracer_package(&self, receiver_pk: &PublicKey) -> SecurePackage {
-        let pkg = TracerPackage::new(&self.keys);
+    pub fn prepare_tracer_package(
+        &self,
+        t: usize,
+        combiner_keys: ActorKeys,
+        receiver_pk: &PublicKey,
+    ) -> SecurePackage {
+        let pkg = TracerPackage::new(&self.keys, t, combiner_keys);
         self.secure_package(&pkg, receiver_pk)
     }
 }

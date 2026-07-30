@@ -1,8 +1,9 @@
-use crate::authority::SignerPackage;
+use crate::authority::{ActorKeys, SignerPackage};
 use crate::combiner;
 use crate::crypto::*;
+use crate::network::AuthorityAnchor;
 use bincode;
-use secp256k1::{Error, PublicKey, Scalar};
+use secp256k1::{Error, PublicKey};
 use serde::{Deserialize, Serialize};
 use taps::protocol::taps::*;
 
@@ -25,6 +26,10 @@ pub struct Signer {
 
     pub taps_kp: Option<KeyPair>,
 
+    /// Combiner network keys, as issued by the Authority. The signer never takes
+    /// them from the combiner's own (unauthenticated) handshake.
+    pub combiner_keys: Option<ActorKeys>,
+
     current_commitment: Option<Commit>,
 }
 
@@ -35,6 +40,7 @@ impl Signer {
             identity_kp: IdentityKeyPair::new(),
             transport_kp: TransportKeyPair::new(),
             taps_kp: None,
+            combiner_keys: None,
             current_commitment: None,
         }
     }
@@ -57,26 +63,30 @@ impl Signer {
         }
     }
 
+    /// `anchor` must be the pinned Authority key material read from the trust
+    /// anchor file - never keys taken from the incoming message.
     pub fn load_from_authority(
         &mut self,
         secure_pkg: &SecurePackage,
-        authority_pk: &PublicKey,
-        identity_pk: &PublicKey,
+        anchor: &AuthorityAnchor,
     ) -> Result<(), Error> {
-        let is_valid = IdentityKeyPair::verify_data(identity_pk, secure_pkg);
+        let is_valid = IdentityKeyPair::verify_data(&anchor.identity_pk, secure_pkg);
 
         if !is_valid {
             eprintln!(
-                "[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired)."
+                "[Signer] Error: SecurePackage verification failed (Invalid Signature or Expired)."
             );
             return Err(Error::InvalidSignature);
         }
 
-        let plaintext_bytes = self.transport_kp.decrypt_from(
-            authority_pk,
-            &secure_pkg.ciphertext,
-            &secure_pkg.nonce,
-        );
+        let plaintext_bytes = self
+            .transport_kp
+            .decrypt_from(
+                &anchor.transport_pk,
+                &secure_pkg.ciphertext,
+                &secure_pkg.nonce,
+            )
+            .map_err(|_| Error::InvalidMessage)?;
 
         let config: SignerPackage =
             bincode::deserialize(&plaintext_bytes).map_err(|_| Error::InvalidMessage)?;
@@ -84,13 +94,21 @@ impl Signer {
         println!("[Signer] Bootstrap successful. Loading configuration...");
 
         self.taps_kp = Some(config.my_kp);
+        self.combiner_keys = Some(config.combiner_keys);
 
         println!("[Signer] Configuration Loaded:");
 
         Ok(())
     }
 
-    pub fn set_commitment(&mut self, combiner_pk: &PublicKey) -> SecurePackage {
+    /// The Combiner's Authority-issued network keys.
+    pub fn combiner_keys(&self) -> Result<ActorKeys, Error> {
+        self.combiner_keys.ok_or(Error::InvalidMessage)
+    }
+
+    pub fn set_commitment(&mut self) -> Result<SecurePackage, Error> {
+        let combiner_pk = self.combiner_keys()?.transport_pk;
+
         let commit = Commit::commit();
         let comm = Commitment::set(&commit);
 
@@ -98,17 +116,18 @@ impl Signer {
 
         let pkg = CommitmentPackage { commitment: comm };
 
-        self.secure_package(&pkg, combiner_pk)
+        Ok(self.secure_package(&pkg, &combiner_pk))
     }
 
-    pub fn set_sigma(&mut self, signed_pkg: &BroadcastPackage, combiner_pk: &PublicKey, identity_pk: &PublicKey) -> Result<SecurePackage, Error> {
+    pub fn set_sigma(&mut self, signed_pkg: &BroadcastPackage) -> Result<SecurePackage, Error> {
+        let keys = self.combiner_keys()?;
 
-        let is_valid = IdentityKeyPair::verify_broadcast_data(&identity_pk, &signed_pkg);
-
+        let is_valid = IdentityKeyPair::verify_broadcast_data(&keys.identity_pk, signed_pkg);
 
         if !is_valid {
             eprintln!(
-                "[Combiner] Error: SecurePackage verification failed (Invalid Signature or Expired)."
+                "[Signer] Error: Challenge broadcast failed verification \
+                 (Invalid Signature or Expired)."
             );
             return Err(Error::InvalidSignature);
         }
@@ -125,6 +144,6 @@ impl Signer {
 
         let pkg = SigmaPackage { z: signature };
 
-        Ok(self.secure_package(&pkg, combiner_pk))
+        Ok(self.secure_package(&pkg, &keys.transport_pk))
     }
 }

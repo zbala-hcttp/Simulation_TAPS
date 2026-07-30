@@ -76,12 +76,19 @@ pub(crate) fn encrypt_package(
 }
 
 /// Decrypts data using AES-256-GCM + ECDH.
+///
+/// Returns an error rather than panicking: a node must not be killable by
+/// anyone who can send it a wrong-key or tampered package.
 pub(crate) fn decrypt_package(
     receiver_sk: &SecretKey,
     sender_pk: &PublicKey,
     ciphertext: &[u8],
     nonce_bytes: &[u8],
-) -> Vec<u8> {
+) -> Result<Vec<u8>, DecryptError> {
+    if nonce_bytes.len() != 12 {
+        return Err(DecryptError);
+    }
+
     // 1. Derive SAME Shared Key (ECDH is symmetric: a*B = b*A)
     let key = derive_aes_key(receiver_sk, sender_pk);
     let cipher = Aes256Gcm::new(&key);
@@ -89,15 +96,21 @@ pub(crate) fn decrypt_package(
     // 2. Decrypt
     let nonce = Nonce::from_slice(nonce_bytes);
 
-    //println!("Key: {:?}", key);
-
-    //println!("[Crypto] Encrypted package ({:?} bytes)", ciphertext);
-
-    //println!("[Crypto] Generated Nonce: {:?}", nonce);
-    cipher
-        .decrypt(nonce, ciphertext)
-        .expect("Decryption failed! Invalid key or tampered data.")
+    cipher.decrypt(nonce, ciphertext).map_err(|_| DecryptError)
 }
+
+/// Authenticated decryption failed: wrong key, wrong nonce, or tampered data.
+/// Deliberately carries no detail, so it cannot become an oracle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecryptError;
+
+impl std::fmt::Display for DecryptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "decryption failed: invalid key or tampered data")
+    }
+}
+
+impl std::error::Error for DecryptError {}
 
 /// Signs the package contents (Ciphertext + Nonce + Timestamp).
 pub(crate) fn sign_package(
@@ -223,7 +236,12 @@ impl TransportKeyPair {
     }
 
     /// Decrypts a package sent to this keypair.
-    pub fn decrypt_from(&self, sender_pk: &PublicKey, ciphertext: &[u8], nonce: &[u8]) -> Vec<u8> {
+    pub fn decrypt_from(
+        &self,
+        sender_pk: &PublicKey,
+        ciphertext: &[u8],
+        nonce: &[u8],
+    ) -> Result<Vec<u8>, DecryptError> {
         decrypt_package(&self.sk, sender_pk, ciphertext, nonce)
     }
 }
@@ -231,8 +249,7 @@ impl TransportKeyPair {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::OsRng;
-    use secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use secp256k1::Secp256k1;
 
     #[test]
     fn test_secure_package_lifecycle() {
@@ -275,7 +292,8 @@ mod tests {
 
         // 7. Decrypt (Bob uses his SK and Alice's PK)
         let decrypted_bytes =
-            decrypt_package(&bob_sk, &alice_pk, &package.ciphertext, &package.nonce);
+            decrypt_package(&bob_sk, &alice_pk, &package.ciphertext, &package.nonce)
+                .expect("Decryption of a genuine package must succeed");
 
         // 8. Assert Success
         assert_eq!(
@@ -290,7 +308,7 @@ mod tests {
     fn test_replay_attack_prevention() {
         let secp = Secp256k1::new();
         let (alice_sk, alice_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
-        let (bob_sk, bob_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
+        let (_bob_sk, bob_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
 
         let message = b"Old message";
 
@@ -319,7 +337,6 @@ mod tests {
         let (bob_sk, bob_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
 
         let message = b"Legit message";
-        let timestamp = current_timestamp();
 
         let (mut ciphertext, nonce) = encrypt_package(&alice_sk, &bob_pk, message);
 
@@ -329,14 +346,28 @@ mod tests {
         // Even if the signature was valid for the ORIGINAL ciphertext,
         // AES-GCM decryption handles integrity checks on the ciphertext itself.
 
-        // Attempt to decrypt tampered ciphertext
-        // decrypt_package uses .expect(), so we use std::panic::catch_unwind to test for panic
-        let result =
-            std::panic::catch_unwind(|| decrypt_package(&bob_sk, &alice_pk, &ciphertext, &nonce));
+        // Attempt to decrypt tampered ciphertext: must be a clean error, not a panic.
+        let result = decrypt_package(&bob_sk, &alice_pk, &ciphertext, &nonce);
 
-        assert!(
-            result.is_err(),
-            "Decryption should panic/fail on tampered ciphertext!"
+        assert_eq!(
+            result,
+            Err(DecryptError),
+            "Decryption should fail on tampered ciphertext!"
         );
+    }
+
+    #[test]
+    fn test_wrong_key_fails_without_panicking() {
+        let secp = Secp256k1::new();
+        let (alice_sk, alice_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
+        let (_bob_sk, bob_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
+        let (mallory_sk, _mallory_pk) = secp.generate_keypair(&mut secp256k1::rand::rng());
+
+        let (ciphertext, nonce) = encrypt_package(&alice_sk, &bob_pk, b"for Bob only");
+
+        // Mallory is not the intended recipient. This must be an error, never a
+        // panic - otherwise anyone can crash a node by sending it a package.
+        let result = decrypt_package(&mallory_sk, &alice_pk, &ciphertext, &nonce);
+        assert_eq!(result, Err(DecryptError));
     }
 }
