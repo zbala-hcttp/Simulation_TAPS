@@ -2,3 +2,6 @@
 /.idea
 .DS_Store
 .csv
+/benchmark_results_combiner.csv
+/benchmark_results_signers.csv
+/benchmark_results_tracer.csv
