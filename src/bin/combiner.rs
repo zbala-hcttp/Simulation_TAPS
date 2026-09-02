@@ -136,7 +136,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    println!("BENCH,Aggregation,{}", commit_processing_us);
+    println!("Aggregation,{}", commit_processing_us);
 
     println!("[Combiner] >> Computing Parameters (R, c)...");
     let start_aggregate_nonce = Instant::now();
@@ -192,7 +192,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    println!("BENCH,Collect Shares,{}", share_processing_us);
+    println!("Collect Shares,{}", share_processing_us);
 
     println!("[Combiner] >> Finalization: Aggregating and Generating ZKP...");
 
